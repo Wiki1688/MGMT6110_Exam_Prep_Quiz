@@ -1,0 +1,16 @@
+{
+  "name": "MGMT6110 Exam Prep Quiz",
+  "short_name": "MGMT6110 Quiz",
+  "description": "Practice questions for MGMT6110 Human-AI Collaboration — Quiz 4 (4 Nov) and the final exam (12 Nov).",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F5F3FF",
+  "theme_color": "#4F46E5",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
