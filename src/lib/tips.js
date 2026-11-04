@@ -9,10 +9,10 @@ export const TIPS = [
   { icon: '🚪', title: 'Rule in text vs rule in the harness', body: 'A rule written in a prompt can be contradicted by the next thing the agent reads. A rule in a setting (Needs approval, Blocked, Create Draft) cannot. The question usually rewards the setting.' },
   { icon: '🟢', title: "'Green means the machines held'", body: 'A successful run is not a correct run. Evidence = an output matched to the run record by run ID or timestamp. Open the transcript.' },
   { icon: '✍️', title: 'Short answers: who, what, when, and what would move it', body: "Name who checks, what they check, when, and what change would move the product. 'A person checks the output' on its own earns one point." },
-  { icon: '🎯', title: 'Quiz 4 weighting', body: 'Weeks 8–9 (T12–T14) carry about half the marks. Six questions (Q1–Q6), the territory map, the ladder, agent washing, the co-collaboration model (E, F, G, cut-off 1). Know those cold.' },
+  { icon: '🎯', title: 'Final exam weighting', body: 'The later weeks carry the most marks. Six questions (Q1–Q6), the territory map, the ladder, agent washing, the co-collaboration model (E, F, G, cut-off 1). Know those cold, then use the Core set.' },
   { icon: '🚫', title: "'Not examinable' is said out loud", body: 'If the professor flagged a table as not examinable (the Singapore availability table), skip it. Everything else on a slide is fair game, especially Rule, Principle, Decision and Watch-for boxes.' },
   { icon: '🧠', title: 'One philosophy question', body: "Expect one question about the point of it all: calibrated delegation, trust, oversight. The answer is the one that keeps 'a named person keeps the decision'." },
-  { icon: '⏱️', title: 'Fifteen minutes, ten questions', body: 'Ninety seconds each. Answer the ones you know first, mark the rest, come back. Do not leave any blank; there is no negative marking mentioned.' },
+  { icon: '⏱️', title: 'Two hours, pace yourself', body: 'Answer the MCQs you know first, mark the rest, then give the short questions real time: who, what, when, and what would move it. Do not leave any blank; there is no negative marking mentioned.' },
 ];
 
 export const BEFORE_SUBMIT = [

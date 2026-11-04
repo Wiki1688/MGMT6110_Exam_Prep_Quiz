@@ -17,8 +17,8 @@ export default function Header({ route, go, profile, profiles, onSwitch, onAddPr
         <button className="brand" onClick={() => go('home')} aria-label="MGMT6110 Exam Prep Quiz — home">
           <span className="brand-logo">?</span>
           <span>
-            <div className="brand-title">MGMT6110 Exam Prep Quiz</div>
-            <div className="brand-sub">Human-AI Collaboration · Quiz 4 & Final</div>
+            <div className="brand-title"><span className="bt-long">MGMT6110 Exam Prep Quiz</span><span className="bt-short">MGMT6110 Quiz</span></div>
+            <div className="brand-sub">Human-AI Collaboration · Final 12 Nov</div>
           </span>
         </button>
         <div className="header-spacer" />

@@ -20,16 +20,20 @@ export const TOPICS = [
 
 export const TOPIC_ORDER = TOPICS.map((t) => t.id);
 
-/** Merge topics found in content with the canonical list; canonical order first, unknown ids appended. */
+// Colours for new topics (T17, T18, T19, ...) that are not in the list above.
+const EXTRA_COLORS = ['#0F766E', '#B45309', '#BE185D', '#1D4ED8', '#15803D', '#7E22CE'];
+
+/** Merge topics found in content with the canonical list; canonical order first, new ids (T17+) appended in id order. */
 export function mergeTopics(contentTopics = []) {
   const byId = new Map(TOPICS.map((t) => [t.id, { ...t }]));
   for (const t of contentTopics) {
     if (!t || !t.id) continue;
     const base = byId.get(t.id) || {};
-    byId.set(t.id, { ...base, ...t, color: t.color || base.color || '#64748B' });
+    byId.set(t.id, { ...base, ...t, color: t.color || base.color || '' });
   }
   const known = TOPIC_ORDER.filter((id) => byId.has(id)).map((id) => byId.get(id));
-  const extra = [...byId.values()].filter((t) => !TOPIC_ORDER.includes(t.id));
+  const extra = [...byId.values()].filter((t) => !TOPIC_ORDER.includes(t.id)).sort((a, b) => a.id.localeCompare(b.id, 'en', { numeric: true }));
+  extra.forEach((t, i) => { if (!t.color) t.color = EXTRA_COLORS[i % EXTRA_COLORS.length]; if (!t.week) t.week = ''; });
   return [...known, ...extra];
 }
 

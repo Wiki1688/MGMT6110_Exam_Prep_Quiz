@@ -1,10 +1,15 @@
-/* MGMT6110 Exam Prep Quiz — simple service worker.
-   App shell: cache-first. Content JSON: network-first (so new questions show up). */
-const VERSION = 'mgmt6110-quiz-v3';
+/* MGMT6110 Exam Prep Quiz — service worker (v4, Nov 2026).
+   - Content JSON (/content/*): network-first with a no-cache fetch, so new questions are never stale;
+     the cached copy is used only when offline.
+   - Pages: network-first, cached index.html when offline.
+   - Hashed assets (/assets/*) and icons: cache-first.
+   - skipWaiting + clients.claim: a new deploy takes over at once; the page shows a refresh toast. */
+const VERSION = 'mgmt6110-quiz-v5-2026-11-04-bank2';
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon.svg'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  self.skipWaiting();
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).catch(() => {}));
 });
 
 self.addEventListener('activate', (e) => {
@@ -14,6 +19,22 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+function networkFirst(req, cacheKey) {
+  // A navigation Request cannot be re-created with options, so only content fetches get cache: 'no-cache'.
+  const p = req.mode === 'navigate' ? fetch(req) : fetch(req, { cache: 'no-cache' });
+  return p.then((res) => {
+    if (res && res.ok) {
+      const copy = res.clone();
+      caches.open(VERSION).then((c) => c.put(cacheKey || req, copy)).catch(() => {});
+    }
+    return res;
+  }).catch(() => caches.match(cacheKey || req).then((hit) => hit || Response.error()));
+}
+
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
@@ -21,18 +42,12 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== location.origin) return;
 
   if (url.pathname.startsWith('/content/')) {
-    e.respondWith(
-      fetch(req).then((res) => {
-        const copy = res.clone();
-        caches.open(VERSION).then((c) => c.put(req, copy));
-        return res;
-      }).catch(() => caches.match(req))
-    );
+    e.respondWith(networkFirst(req));
     return;
   }
 
   if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('/index.html')));
+    e.respondWith(networkFirst(req, '/index.html'));
     return;
   }
 

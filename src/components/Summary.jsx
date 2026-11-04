@@ -112,7 +112,8 @@ function SummaryBody({ summary, topics, progress, startSession, go }) {
         <div className="btn-row">
           <button className="btn primary" onClick={() => go('home')}>🏠 Home</button>
           {mode === 'quick10' && <button className="btn" onClick={() => startSession({ mode: 'quick10', title: 'Quick 10', count: 10, timerMinutes: 15, shuffleQ: true })}>⚡ Another Quick 10</button>}
-          {mode === 'quiz4' && <button className="btn" onClick={() => startSession({ mode: 'quiz4', title: 'Quiz 4 set (4 Nov)' })}>🎯 Quiz 4 set again</button>}
+          {mode === 'core' && <button className="btn" onClick={() => startSession({ mode: 'core', title: 'Exam core set' })}>🎯 Core set again</button>}
+          {mode === 'short' && <button className="btn" onClick={() => startSession({ mode: 'short', title: 'Short questions (all topics)' })}>✍️ More short questions</button>}
           {mode === 'mock' && <button className="btn" onClick={() => startSession({ mode: 'mock', title: 'Full mock exam', count: 30, timerMinutes: 45, shuffleQ: true })}>📝 New mock</button>}
           <button className="btn ghost" onClick={() => go('tips')}>💡 Tips & Traps</button>
         </div>

@@ -6,7 +6,7 @@ export default function Tips() {
     <div>
       <div className="card" style={{ background: 'linear-gradient(135deg, var(--brand-soft), var(--card))' }}>
         <h1>Tips & Traps</h1>
-        <p className="muted">How Prof Roh writes questions, and how to read them. Quiz 4 is 10 MCQs in 15 minutes; the final is closed book, MCQ plus short scenario questions.</p>
+        <p className="muted">How Prof Roh writes questions, and how to read them. The final exam is on Thu 12 Nov 2026 at 1 pm: 2 hours, closed book, MCQ plus short scenario questions.</p>
       </div>
       <div className="section-title"><h2>Exam tips</h2></div>
       <div className="tips-grid">

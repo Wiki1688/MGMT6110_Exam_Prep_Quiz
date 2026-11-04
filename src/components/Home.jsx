@@ -1,19 +1,28 @@
 import React, { useMemo, useState } from 'react';
-import { EXAMS, daysLeft, daysLabel } from '../lib/utils.js';
+import { FINAL_EXAM, daysLeft, examMessage, fmtTime, fmtDate } from '../lib/utils.js';
 import { shortTitle } from '../lib/topics.js';
+import { isFlagged, progressStats } from '../lib/storage.js';
 import { Ring } from './Ring.jsx';
 
-export default function Home({ content, pool, progress, settings, setSettings, startSession, profile }) {
+const BACKUP_EVERY_MS = 3 * 86400000;
+
+function backupDismissed() {
+  try { return sessionStorage.getItem('mgmt6110quiz:backupLater') === '1'; } catch { return false; }
+}
+
+export default function Home({ content, pool, progress, settings, setSettings, startSession, profile, savedSession, onResume, onDiscardSaved, onBackup }) {
   const [selected, setSelected] = useState([]);
   const [msg, setMsg] = useState('');
+  const [later, setLater] = useState(backupDismissed);
 
   const perTopic = useMemo(() => {
     const m = {};
-    for (const t of content.topics) m[t.id] = { total: 0, answered: 0, correct: 0, quiz4: 0 };
+    for (const t of content.topics) m[t.id] = { total: 0, answered: 0, correct: 0, core: 0 };
     for (const q of content.questions) {
       const s = m[q.topic];
+      if (!s) continue;
       s.total += 1;
-      if (q.quiz4) s.quiz4 += 1;
+      if (q.core) s.core += 1;
       const a = progress.answers[q.id];
       if (a) {
         s.answered += 1;
@@ -24,15 +33,19 @@ export default function Home({ content, pool, progress, settings, setSettings, s
     return m;
   }, [content, progress]);
 
+  const allShort = useMemo(() => content.questions.filter((q) => q.type === 'short'), [content]);
   const counts = useMemo(() => ({
     all: pool.length,
-    quiz4: pool.filter((q) => q.quiz4).length,
+    core: pool.filter((q) => q.core).length,
+    anyCore: content.questions.some((q) => q.core),
+    short: allShort.filter((q) => !selected.length || selected.includes(q.topic)).length,
     wrong: pool.filter((q) => ['wrong', 'partly'].includes(progress.answers[q.id]?.last)).length,
-    flagged: pool.filter((q) => progress.flags[q.id]).length,
-  }), [pool, progress]);
+    flagged: pool.filter((q) => isFlagged(progress, q.id)).length,
+  }), [pool, progress, content, allShort, selected]);
 
-  const answeredAll = Object.keys(progress.answers).length;
-  const accuracy = progress.totals?.answered ? Math.round((progress.totals.correct / progress.totals.answered) * 100) : null;
+  const stats = useMemo(() => progressStats(progress, content.questions.map((q) => q.id)), [progress, content]);
+  const n = daysLeft(FINAL_EXAM.iso);
+  const needBackup = stats.answered > 20 && Date.now() - (progress.backupAt || 0) > BACKUP_EVERY_MS && !later;
 
   const start = (spec) => {
     const ok = startSession(spec);
@@ -40,6 +53,7 @@ export default function Home({ content, pool, progress, settings, setSettings, s
   };
 
   const topicTitle = !selected.length || selected.length === content.topics.length ? 'Topic practice (all topics)' : selected.length > 4 ? `Topic practice (${selected.length} topics)` : `Topic practice (${selected.join(', ')})`;
+  const shortTitleText = selected.length ? `Short questions (${selected.length > 4 ? selected.length + ' topics' : selected.join(', ')})` : 'Short questions (all topics)';
   const toggleTopic = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const sel = settings;
@@ -48,28 +62,46 @@ export default function Home({ content, pool, progress, settings, setSettings, s
 
   return (
     <div className="hero">
-      {/* Countdown */}
-      <div className="countdown">
-        {EXAMS.map((e) => {
-          const n = daysLeft(e.iso);
-          return (
-            <div key={e.key} className={'cd-chip' + (n >= 0 && n <= 3 ? ' soon' : '')}>
-              <div className="cd-days">{n < 0 ? '✓' : n}<small>{n < 0 ? 'done' : n === 1 ? 'day' : 'days'}</small></div>
-              <div>
-                <div className="cd-label">{e.label} · {e.when}</div>
-                <div className="cd-sub">{e.sub} · {daysLabel(n)}</div>
-              </div>
-            </div>
-          );
-        })}
+      {/* Countdown: the final only (Quiz 4 is over) */}
+      <div className={'countdown-card' + (n >= 0 && n <= 3 ? ' soon' : '') + (n === 0 ? ' exam-day' : '')} data-testid="countdown">
+        <div className="cd-days">{n < 0 ? '✓' : n === 0 ? '🎯' : n}<small>{n < 0 ? 'done' : n === 0 ? 'today' : n === 1 ? 'day left' : 'days left'}</small></div>
+        <div>
+          <div className="cd-label">{FINAL_EXAM.label} · {FINAL_EXAM.when}</div>
+          <div className="cd-sub">{FINAL_EXAM.sub}</div>
+          <div className="cd-msg">{examMessage(n)}</div>
+        </div>
       </div>
+
+      {savedSession && (
+        <div className="resume-card" data-testid="resume-card">
+          <span className="ic" aria-hidden>▶️</span>
+          <div className="rc-body">
+            <div className="rc-title">Resume your session (Q {savedSession.index + 1} of {savedSession.total})</div>
+            <div className="rc-sub">{savedSession.title} · {savedSession.answered} answered{savedSession.timerLeft != null ? ` · ${fmtTime(savedSession.timerLeft)} left on the timer` : ''}{savedSession.savedAt ? ` · ${fmtDate(savedSession.savedAt)}` : ''}</div>
+          </div>
+          <div className="btn-row">
+            <button className="btn primary" onClick={onResume}>Resume →</button>
+            <button className="btn ghost sm" onClick={() => { if (confirm('Discard the saved session? Your answers stay in your progress.')) onDiscardSaved(); }}>Discard</button>
+          </div>
+        </div>
+      )}
+
+      {needBackup && (
+        <div className="banner backup" role="status" data-testid="backup-banner">
+          <b>💾 Back up your progress.</b> {progress.backupAt ? `Last backup ${fmtDate(progress.backupAt)}.` : 'You have not made a backup yet.'} One tap saves a small file you can import on any device.
+          <div className="btn-row" style={{ marginTop: 8 }}>
+            <button className="btn sm primary" onClick={onBackup}>Back up now</button>
+            <button className="btn sm ghost" onClick={() => { try { sessionStorage.setItem('mgmt6110quiz:backupLater', '1'); } catch { /* ignore */ } setLater(true); }}>Later</button>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="stat-row">
-        <div className="stat"><span style={{ fontSize: '1.5rem' }}>{profile?.emoji || '👤'}</span><div><div className="n" style={{ fontSize: '1.05rem' }}>{profile?.name || 'No profile'}</div><div className="l">studying now</div></div></div>
-        <div className="stat"><span className={progress.streak?.count ? 'flame' : ''} style={{ fontSize: '1.5rem' }}>🔥</span><div><div className="n">{progress.streak?.count || 0}</div><div className="l">day streak (best {progress.streak?.best || 0})</div></div></div>
-        <div className="stat"><span style={{ fontSize: '1.5rem' }}>✅</span><div><div className="n">{answeredAll}<span className="muted" style={{ fontSize: '0.9rem', fontWeight: 600 }}> / {content.questions.length}</span></div><div className="l">questions seen</div></div></div>
-        <div className="stat"><span style={{ fontSize: '1.5rem' }}>🎯</span><div><div className="n">{accuracy == null ? '–' : accuracy + '%'}</div><div className="l">accuracy so far</div></div></div>
+        <div className="stat"><span className="si">{profile?.emoji || '👤'}</span><div><div className="n sm">{profile?.name || 'No profile'}</div><div className="l">{progress.streak?.count ? `🔥 ${progress.streak.count}-day streak` : 'studying now'}</div></div></div>
+        <div className="stat"><span className="si">✅</span><div><div className="n" data-stat="answered">{stats.answered}<span className="of"> / {content.questions.length}</span></div><div className="l">answered</div></div></div>
+        <div className="stat"><span className="si">🎯</span><div><div className="n" data-stat="correct">{stats.correct}</div><div className="l">correct last time{stats.accuracy != null ? ` · ${stats.accuracy}% overall` : ''}</div></div></div>
+        <div className="stat"><span className="si">⭐</span><div><div className="n" data-stat="flagged">{stats.flagged}</div><div className="l">flagged</div></div></div>
       </div>
 
       {msg && <div className="banner" role="status">{msg} <button className="btn sm ghost" onClick={() => setMsg('')}>OK</button></div>}
@@ -77,17 +109,23 @@ export default function Home({ content, pool, progress, settings, setSettings, s
       {/* Modes */}
       <div className="section-title"><h2>Practice modes</h2><span className="small muted">{counts.all} questions in pool</span></div>
       <div className="modes">
-        <button className="mode hero-mode" onClick={() => start({ mode: 'quiz4', title: 'Quiz 4 set (4 Nov)', timerMinutes: null })} disabled={!counts.quiz4}>
-          <span className="ic">🎯</span>
-          <span><div className="t">Quiz 4 set (4 Nov)</div><div className="d">{counts.quiz4} questions most likely on Wednesday, heavy on Weeks 8–9</div></span>
-        </button>
+        {counts.anyCore && (
+          <button className="mode hero-mode" onClick={() => start({ mode: 'core', title: 'Exam core set', topics: selected })} disabled={!counts.core}>
+            <span className="ic">🎯</span>
+            <span><div className="t">Exam core set</div><div className="d">{counts.core} questions most likely to be examined on 12 Nov{selected.length ? ' · in your selected topics' : ''}</div></span>
+          </button>
+        )}
         <button className="mode" onClick={() => start({ mode: 'quick10', title: 'Quick 10', count: 10, timerMinutes: 15, shuffleQ: true })} disabled={counts.all < 1}>
           <span className="ic">⚡</span>
-          <span><div className="t">Quick 10</div><div className="d">10 random questions, 15-minute timer, like the real quiz</div></span>
+          <span><div className="t">Quick 10</div><div className="d">10 random questions, 15-minute timer</div></span>
         </button>
         <button className="mode" onClick={() => start({ mode: 'mock', title: 'Full mock exam', count: 30, timerMinutes: 45, shuffleQ: true })} disabled={counts.all < 1}>
           <span className="ic">📝</span>
           <span><div className="t">Full mock exam</div><div className="d">30 random questions across all topics, 45 min</div></span>
+        </button>
+        <button className="mode" data-testid="mode-short" onClick={() => start({ mode: 'short', title: shortTitleText, topics: selected })} disabled={!counts.short}>
+          <span className="ic">✍️</span>
+          <span><div className="t">Short questions</div><div className="d">{counts.short} short-answer questions{selected.length ? ' in your selected topics' : ' · tap topics below to filter'}. Write, reveal, self-grade.</div></span>
         </button>
         <button className="mode" onClick={() => start({ mode: 'topic', title: topicTitle, topics: selected })} disabled={!counts.all}>
           <span className="ic">📚</span>
@@ -146,13 +184,13 @@ export default function Home({ content, pool, progress, settings, setSettings, s
       </div>
       <div className="topics">
         {content.topics.map((t) => {
-          const s = perTopic[t.id];
+          const s = perTopic[t.id] || { total: 0, answered: 0, correct: 0 };
           const pct = s.total ? (s.correct / s.total) * 100 : 0;
           const on = selected.includes(t.id);
           return (
             <button key={t.id} className={'topic-card' + (on ? ' selected' : '')} style={{ '--tc': t.color }} onClick={() => toggleTopic(t.id)} aria-pressed={on} disabled={!s.total} title={t.title}>
               <div className="body">
-                <div className="id">{t.id} · {t.week}{s.quiz4 ? ' · Q4 ×' + s.quiz4 : ''}</div>
+                <div className="id">{t.id}{t.week ? ' · ' + t.week : ''}{s.core ? ' · core ×' + s.core : ''}</div>
                 <div className="tt">{shortTitle(t)}</div>
                 <div className="meta">{s.total ? `${s.answered}/${s.total} answered · ${Math.round(s.correct)} correct` : 'no questions yet'}</div>
               </div>

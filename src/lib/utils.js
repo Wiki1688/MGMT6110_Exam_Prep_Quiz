@@ -11,10 +11,17 @@ export function pick(arr, n) {
   return shuffle(arr).slice(0, n);
 }
 
-export const EXAMS = [
-  { key: 'quiz4', label: 'Quiz 4', when: 'Wed 4 Nov 2026', iso: '2026-11-04T00:00:00+08:00', sub: '10 MCQs · 15 min' },
-  { key: 'final', label: 'Final', when: 'Thu 12 Nov 2026 1 pm', iso: '2026-11-12T13:00:00+08:00', sub: '2 h · closed book · 30%' },
-];
+// One countdown only (Quiz 4 on 4 Nov is over).
+export const FINAL_EXAM = { key: 'final', label: 'Final exam', when: 'Thu 12 Nov 2026 · 1 pm', iso: '2026-11-12T13:00:00+08:00', sub: '2 h · closed book · 30%' };
+export const EXAMS = [FINAL_EXAM];
+
+/** Message for the countdown card; special wording on exam day (Asia/Singapore). */
+export function examMessage(n) {
+  if (n > 1) return `${n} days left. One topic a day, then a full mock.`;
+  if (n === 1) return 'Tomorrow. Light review only: your flagged and wrong questions, then sleep early.';
+  if (n === 0) return 'Exam day! 1 pm, closed book. Skim your flagged questions, eat, breathe. You have done the work.';
+  return 'The final is done. Well done.';
+}
 
 /** Whole days left until the exam day, counted in Asia/Singapore calendar days. */
 export function daysLeft(iso) {
@@ -109,6 +116,32 @@ export function highlightTerms(keywords) {
     }
   }
   return [...out].sort((a, b) => b.length - a.length);
+}
+
+const reEsc = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function markAll(src, terms) {
+  if (!terms.length) return { html: escapeHtml(src), n: 0 };
+  const re = new RegExp(terms.map(reEsc).join('|'), 'gi');
+  let html = '', last = 0, m, n = 0;
+  while ((m = re.exec(src))) {
+    if (!m[0]) { re.lastIndex += 1; continue; }
+    html += escapeHtml(src.slice(last, m.index)) + '<mark>' + escapeHtml(m[0]) + '</mark>';
+    last = m.index + m[0].length;
+    n += 1;
+  }
+  return { html: html + escapeHtml(src.slice(last)), n };
+}
+
+/** Model answer as HTML with the keywords highlighted. One combined pattern (longest first) so marks never nest.
+ *  Keywords are concept labels, so when the exact phrases are rarely in the text we also mark their key words. */
+export function highlightModelAnswer(modelAnswer, keywords) {
+  const src = String(modelAnswer || '');
+  const phrases = highlightTerms(keywords);
+  const first = markAll(src, phrases);
+  if (first.n >= Math.min(2, (keywords || []).length)) return first.html;
+  const extra = new Set(phrases);
+  for (const k of keywords || []) for (const w of words(k)) if (w.length >= 5) extra.add(w);
+  return markAll(src, [...extra].sort((a, b) => b.length - a.length)).html;
 }
 
 export function gradeShort(text, keywords) {

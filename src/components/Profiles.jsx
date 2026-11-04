@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { AVATARS, exportProfile, parseImport, loadProgress } from '../lib/storage.js';
-import { download, fmtDate, fmtTime } from '../lib/utils.js';
+import { AVATARS, parseImport, loadProgress, progressStats } from '../lib/storage.js';
+import { fmtDate, fmtTime } from '../lib/utils.js';
 
 export function ProfileSheet({ onCreate, onClose, initial }) {
   const [name, setName] = useState(initial?.name || '');
@@ -29,7 +29,7 @@ export function ProfileSheet({ onCreate, onClose, initial }) {
   );
 }
 
-export default function Profiles({ profilesData, progressCurrent, current, onSwitch, onAdd, onUpdate, onRemove, onImport, onReset }) {
+export default function Profiles({ profilesData, progressCurrent, current, onSwitch, onAdd, onUpdate, onRemove, onImport, onReset, onBackup, persist, questionIds }) {
   const fileRef = useRef(null);
   const [editing, setEditing] = useState(null);
   const [msg, setMsg] = useState('');
@@ -38,13 +38,11 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
   const leaderboard = useMemo(() => profilesData.profiles.map((p) => {
     const prog = p.id === current?.id ? progressCurrent : loadProgress(p.id);
     const bestOf = (m) => prog.best?.[m];
-    return { p, mock: bestOf('mock'), quick: bestOf('quick10'), quiz4: bestOf('quiz4'), answered: prog.totals?.answered || 0, streak: prog.streak?.count || 0 };
-  }).sort((a, b) => (b.mock?.pct ?? -1) - (a.mock?.pct ?? -1) || (b.quiz4?.pct ?? -1) - (a.quiz4?.pct ?? -1) || b.answered - a.answered), [profilesData, progressCurrent, current]);
+    return { p, mock: bestOf('mock'), quick: bestOf('quick10'), core: bestOf('core'), answered: prog.totals?.answered || 0, streak: prog.streak?.count || 0 };
+  }).sort((a, b) => (b.mock?.pct ?? -1) - (a.mock?.pct ?? -1) || (b.core?.pct ?? -1) - (a.core?.pct ?? -1) || b.answered - a.answered), [profilesData, progressCurrent, current]);
 
-  const doExport = () => {
-    if (!current) return;
-    download(`mgmt6110-progress-${current.name.replace(/\W+/g, '_')}.json`, exportProfile(current, progressCurrent), 'application/json');
-  };
+  const stats = progressStats(progressCurrent, questionIds);
+  const persistText = persist === 'protected' ? 'Storage: protected' : persist === 'unknown' ? 'Storage: checking…' : 'Storage: may be cleared by the phone';
   const onFile = async (e) => {
     const f = e.target.files?.[0];
     e.target.value = '';
@@ -81,21 +79,27 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
         </div>
       </div>
 
-      <div className="card">
-        <h2>Sync between phone and laptop</h2>
-        <p className="muted small">Progress lives in this browser only. To carry it over: export here, send the file to yourself (WhatsApp, email, AirDrop), then import on the other device.</p>
+      <div className="card" data-testid="backup-card">
+        <h2>Back up, restore and sync</h2>
+        <div className="btn-row" style={{ marginBottom: 8 }}>
+          <span className={'chip ' + (persist === 'protected' ? 'ok' : 'warn')} data-testid="persist-status">{persist === 'protected' ? '🔒' : '⚠️'} {persistText}</span>
+          {current && <span className="chip">Last backup: {progressCurrent.backupAt ? fmtDate(progressCurrent.backupAt) : 'never'}</span>}
+        </div>
+        <p className="muted small">Progress is saved on this device the moment you answer (and copied to a second store in the browser). {persist === 'protected' ? 'The browser has agreed not to clear it.' : 'The phone may still clear it when storage runs low, so back up now and then.'} A backup is a small file: send it to yourself (WhatsApp, email) and import it on another device.</p>
+        {current && <p className="small">{current.emoji} <b>{current.name}</b>: {stats.answered} answered · {stats.correct} correct last time · {stats.flagged} flagged</p>}
         <div className="btn-row">
-          <button className="btn" onClick={doExport} disabled={!current}>⬆️ Export {current ? current.name + "'s" : ''} progress (.json)</button>
-          <button className="btn" onClick={() => fileRef.current?.click()}>⬇️ Import a progress file</button>
-          <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={onFile} />
+          <button className="btn primary" onClick={onBackup} disabled={!current}>💾 Back up now (.json)</button>
+          <button className="btn" onClick={() => fileRef.current?.click()} data-testid="import-btn">📥 Import a backup file</button>
+          <input ref={fileRef} type="file" accept="application/json,.json" style={{ display: 'none' }} onChange={onFile} data-testid="import-input" />
           <button className="btn ghost danger" onClick={() => { if (current && confirm(`Reset all progress for ${current.name}?`)) onReset(); }} disabled={!current}>Reset progress</button>
         </div>
         {pendingImport && (
-          <div className="banner" style={{ marginTop: 12 }}>
-            <b>Found progress for {pendingImport.profile.emoji} {pendingImport.profile.name}</b> ({Object.keys(pendingImport.progress.answers || {}).length} questions answered). What do you want to do?
+          <div className="banner" style={{ marginTop: 12 }} data-testid="import-choice">
+            <b>Found progress for {pendingImport.profile.emoji} {pendingImport.profile.name}</b> ({Object.keys(pendingImport.progress.answers || {}).length} questions answered, {Object.values(pendingImport.progress.flags || {}).filter((f) => f.on).length} flagged · file format {pendingImport.format}). What do you want to do?
             <div className="btn-row" style={{ marginTop: 8 }}>
-              <button className="btn sm primary" onClick={() => { onImport(pendingImport.profile, pendingImport.progress, 'new'); setPendingImport(null); setMsg('Imported as a new profile.'); }}>Add as new profile</button>
-              {current && <button className="btn sm" onClick={() => { onImport(pendingImport.profile, pendingImport.progress, 'merge'); setPendingImport(null); setMsg(`Merged into ${current.name}.`); }}>Merge into {current.name}</button>}
+              {current && <button className="btn sm primary" data-testid="import-merge" onClick={() => { onImport(pendingImport.profile, pendingImport.progress, 'merge'); setPendingImport(null); setMsg(`Merged into ${current.name}. For each question the latest answer was kept; flags were combined.`); }}>Merge into {current.name} (recommended)</button>}
+              <button className={'btn sm' + (current ? '' : ' primary')} data-testid="import-new" onClick={() => { onImport(pendingImport.profile, pendingImport.progress, 'new'); setPendingImport(null); setMsg('Imported as a new profile.'); }}>Add as new profile</button>
+              {current && <button className="btn sm ghost danger" data-testid="import-replace" onClick={() => { if (confirm(`Replace ALL of ${current.name}'s progress on this device with the file?`)) { onImport(pendingImport.profile, pendingImport.progress, 'replace'); setPendingImport(null); setMsg(`Replaced ${current.name}'s progress with the file.`); } }}>Replace {current.name}'s progress</button>}
               <button className="btn sm ghost" onClick={() => setPendingImport(null)}>Cancel</button>
             </div>
           </div>
@@ -105,14 +109,14 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
       <div className="card">
         <h2>🏆 Leaderboard (this device)</h2>
         <div style={{ overflowX: 'auto' }}><table className="leaderboard">
-          <thead><tr><th>#</th><th>Who</th><th>Mock</th><th>Quiz 4</th><th>Quick 10</th><th>Done</th><th>Streak</th></tr></thead>
+          <thead><tr><th>#</th><th>Who</th><th>Mock</th><th>Core</th><th>Quick 10</th><th>Done</th><th>Streak</th></tr></thead>
           <tbody>
             {leaderboard.map((row, i) => (
               <tr key={row.p.id}>
                 <td>{i === 0 && row.mock ? '🥇' : i === 1 && row.mock ? '🥈' : i === 2 && row.mock ? '🥉' : i + 1}</td>
                 <td>{row.p.emoji} {row.p.name}</td>
                 <td>{row.mock ? <span style={{ whiteSpace: 'nowrap' }}>{row.mock.pct}% <span className="muted small">({fmtTime(row.mock.seconds)})</span></span> : '–'}</td>
-                <td>{row.quiz4 ? `${row.quiz4.pct}%` : '–'}</td>
+                <td>{row.core ? `${row.core.pct}%` : '–'}</td>
                 <td>{row.quick ? `${row.quick.pct}%` : '–'}</td>
                 <td>{row.answered}</td>
                 <td>{row.streak ? `🔥 ${row.streak}` : '–'}</td>

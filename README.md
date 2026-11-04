@@ -1,11 +1,37 @@
 # MGMT6110 Exam Prep Quiz
 
 A small, fast study app for **MGMT6110 Human-AI Collaboration** (SMU MBAI, Prof Sungjong Roh).
-Practice MCQs, matching and short-scenario questions for **Quiz 4 (Wed 4 Nov 2026)** and the **final exam (Thu 12 Nov 2026, 1 pm)**.
+Practice MCQs, matching and short-scenario questions for the **final exam (Thu 12 Nov 2026, 1 pm, Asia/Singapore)**. Quiz 4 (4 Nov) is over, so everything Quiz 4 has been removed.
 
 Works on laptop and phone, installs as a PWA, keeps a separate progress record for each person on the same device, and prints clean test papers.
 
 Built with Vite + React (JavaScript) + plain CSS. No backend. Everything is static, so it deploys to Vercel for free.
+
+---
+
+## What changed in v2 (4 Nov 2026)
+
+**Your progress is much safer**
+- Every answer, flag and grade is saved **the moment you tap** (not "a bit later"), and again when the app is hidden or closed.
+- **Two windows no longer overwrite each other.** Before writing, the app reads what is stored and merges question by question (the newest answer for each question wins; flags carry their own on/off time). Totals are recomputed from the answers, never added up twice. Other open windows pick up the changes at once (`storage` event) and when you come back to them.
+- **A session survives a reload.** The questions, option order, current question, answers, timer and mode are saved per profile. Reload (or fold/unfold the phone) and you land on the same question. If the app was closed, Home shows **"Resume your session (Q 7 of 20)"**. Two windows each keep their own session.
+- **Second copy in IndexedDB.** Every save is mirrored to IndexedDB; if localStorage is ever empty or corrupt on start-up, it is restored from there.
+- **Asks the phone not to clear the data** (`navigator.storage.persist()`); Profiles shows *Storage: protected* or *Storage: may be cleared by the phone*.
+- **Back up now** button (Home banner + Profiles), and a gentle reminder when you have answered more than 20 questions and not backed up for 3 days.
+- **Import merges by default** (newest answer per question wins, flags combined by newest time); *Add as new profile* and *Replace* are the other choices. Old format-1 files still import.
+
+**Foldable layouts (Honor Magic V3)**
+- Cover screen (≈ 385 × 860): compact header, big tap targets, no sideways scrolling, a **sticky bottom bar with Prev / ★ Flag / Next**.
+- Inner screen (≈ 785 × 850 or 850 × 785): **two panes** — question and options on the left, **Answer & why** on the right (for short questions the model answer and the examiner box go on the right). Folding/unfolding switches layout without losing your place.
+- Uses `dvh` units, `env(safe-area-inset-*)`, `viewport-fit=cover`, and lines the panes up with a hinge where the browser reports one (`horizontal-viewport-segments`). Text stays at 17 px or larger.
+
+**Study features**
+- One countdown: **Final exam · Thu 12 Nov 2026 · 1 pm** with days left and an exam-day message.
+- **Short questions** mode (all short-answer questions, filter by tapping topic cards). After *Reveal* you see the model answer with keywords highlighted **and** a *What the examiner looks for* box.
+- **Exam core set** mode: questions with `"core": true`. The button is hidden until at least one question has it.
+- Print view: *All / Short questions only / Exam core set / Only my wrong / Only my flagged / My wrong + flagged*, show or hide answers, **topic checkboxes**, and a one-tap **Print my wrong + flagged**.
+- New topics (T17, T18, T19, …) appear automatically from `questions.json`.
+- Service worker: content JSON is always fetched fresh (network-first, no-cache), a new deploy takes over immediately and the app shows **"New version available — tap to refresh"**.
 
 ---
 
@@ -73,7 +99,7 @@ The app loads `questions.json` first, then every file named in `index.json` and 
   ],
   "questions": [
     {
-      "id": "Q001", "topic": "T13", "type": "mcq", "difficulty": 2, "quiz4": true,
+      "id": "Q001", "topic": "T13", "type": "mcq", "difficulty": 2, "core": true,
       "stem": "question text",
       "options": ["A…", "B…", "C…", "D…"],
       "answer": 1,
@@ -83,17 +109,17 @@ The app loads `questions.json` first, then every file named in `index.json` and 
       "tip": "optional exam tip"
     },
     {
-      "id": "Q120", "topic": "T10", "type": "matching", "difficulty": 2, "quiz4": false,
+      "id": "Q120", "topic": "T10", "type": "matching", "difficulty": 2,
       "stem": "Match each example to its quadrant",
       "pairs": [{ "left": "…", "right": "…" }],
       "explanation": "…", "source": "…"
     },
     {
-      "id": "Q150", "topic": "T14", "type": "short", "difficulty": 3, "quiz4": true,
+      "id": "Q150", "topic": "T14", "type": "short", "difficulty": 3, "core": true,
       "stem": "scenario + question",
       "modelAnswer": "A+ answer, 3–6 sentences, uses slide wording",
       "keywords": ["agreement", "congruency", "accuracy"],
-      "explanation": "what an examiner looks for",
+      "explanation": "what an examiner looks for (shown in the 'What the examiner looks for' box)",
       "source": "…"
     }
   ]
@@ -105,10 +131,10 @@ Field notes:
 | field | meaning |
 |---|---|
 | `id` | unique string, e.g. `Q001`. Progress is stored against this id, so do not renumber. |
-| `topic` | one of the canonical ids `T01`–`T16` (see `src/lib/topics.js`). Unknown ids are appended after the known ones; questions with a topic that is not listed anywhere are skipped with a console warning. |
+| `topic` | `T01`–`T16` are built in (see `src/lib/topics.js`). **New topics such as `T17`–`T19` work automatically**: add them to the `topics` array (title, week, colour) or just use the id on a question and it appears with the id as its title and an automatic colour. |
 | `type` | `mcq`, `matching` or `short` |
 | `difficulty` | 1 (easy), 2 (medium), 3 (hard) — used by the difficulty filter |
-| `quiz4` | `true` puts the question in the **Quiz 4 set (4 Nov)** mode |
+| `core` | **new, optional** boolean. `true` puts the question in the **Exam core set** ("the questions most likely to be examined"). The Core button only appears when at least one question has it. (`quiz4` is ignored now.) |
 | `answer` | **0-based** index into `options` (0 = A, 1 = B, …) |
 | `keywords` | words highlighted in the model answer and checked against the student's own answer (hint only; the student self-grades) |
 
@@ -129,8 +155,9 @@ bash scripts/sync-content.sh /some/other/dir
 
 | mode | what it does |
 |---|---|
-| **Quiz 4 set (4 Nov)** | only questions flagged `quiz4: true` |
-| **Quick 10** | 10 random questions, 15-minute timer, like the real quiz |
+| **Exam core set** | only questions with `core: true` (hidden if none); respects the topic cards you tapped |
+| **Quick 10** | 10 random questions, 15-minute timer |
+| **Short questions** | every short-answer question (ignores the type filter); tap topic cards first to narrow it |
 | **Full mock exam** | 30 random questions, 45 min, always shuffled |
 | **Topic practice** | tap one or many topic cards, then start |
 | **Review wrong** | every question you last got wrong (or partly) |
@@ -144,16 +171,21 @@ Short-answer questions: write your own answer, reveal the model answer (keywords
 
 ---
 
-## 5. Profiles and syncing between devices
+## 5. Profiles, backup and restore
 
-Progress lives in the browser's `localStorage`, so it never leaves the device and needs no account.
+Progress lives in this browser (`localStorage`, mirrored to IndexedDB). It needs no account and never leaves the device unless you back it up.
 
-- **Profiles**: each person on a shared laptop gets a name + emoji avatar. Switch from the header menu. Each profile has its own answers, wrong/right history, flags, streak and best scores.
-- **Leaderboard (this device)**: Profiles page → best mock, best Quiz 4 set, best Quick 10, questions answered, streak.
-- **Carry progress from phone to laptop**: Profiles page → *Export progress (.json)*, send the file to yourself, then *Import a progress file* on the other device. You can add it as a new profile or merge it into the current one (merge keeps the higher counts, the union of flags and the best scores).
-- **Reset progress** wipes the current profile's record. Deleting a profile removes its record too.
+- **Profiles**: each person on a shared laptop gets a name + emoji avatar. Switch from the header menu. Each profile has its own answers, flags, streak, best scores, saved session and last summary.
+- **Back up now** (Home banner or Profiles page) downloads `mgmt6110-progress-<name>-<date>.json` (export **format 2**). Send it to yourself (WhatsApp, email). The Home banner reminds you when you have answered more than 20 questions and the last backup is older than 3 days; *Later* hides it until the app is reopened.
+- **Restore / move to another device**: Profiles → *Import a backup file*. You then choose:
+  - **Merge into <current profile>** (recommended, the default): for each question the newest answer wins; flags are combined by their newest on/off time; sessions and best scores are combined. Importing the same file twice changes nothing.
+  - **Add as new profile**.
+  - **Replace <current profile>'s progress** with the file (asks to confirm).
+  Format-1 files from v1 (flags as `{"Q033": true}`) are accepted.
+- **Storage status** on the Profiles page: *Storage: protected* means the browser agreed not to clear the data; *may be cleared by the phone* means back up now and then (installing the app to the home screen usually upgrades this).
+- **Reset progress** wipes the current profile's record (also in other open windows). Deleting a profile removes its record too.
 
-Clearing site data in the browser erases everything, so export first if it matters.
+Progress format (per profile, key `mgmt6110quiz:progress:<id>`): `answers {qid: {attempts, correct, wrong, last, lastAt}}`, `flags {qid: {on, at}}`, `totals` (always recomputed from `answers`), `streak`, `best`, `sessions`, `backupAt`, `epoch` (changes on Reset/Replace). The active session is under `mgmt6110quiz:session:<id>` and the last summary under `mgmt6110quiz:summary:<id>`.
 
 ---
 
@@ -161,16 +193,18 @@ Clearing site data in the browser erases everything, so export first if it matte
 
 *Print & export* page:
 
-1. Pick what to include: all questions / Quiz 4 set / only my wrong ones / only my flagged.
-2. Choose *Show answers & why* (study notes) or *Hide (test paper)*.
-3. **Print / Save as PDF** opens the browser print dialog. The print stylesheet is black on white, hides the app chrome, keeps each question on one page and starts each topic on a new page.
-4. **Download as .md** saves the same selection as a Markdown file (handy for Notion/Obsidian or for pasting into a group chat).
+1. Pick what to include: all questions / **short questions only** / exam core set (if any) / only my wrong ones / only my flagged / **my wrong + flagged**.
+2. Choose *Show answers & why* (study notes) or *Hide (test paper)*. For short questions this shows or hides the model answers.
+3. Tick **topic checkboxes** to print only some topics (none ticked = all).
+4. **Print my wrong + flagged** selects that set and opens the print dialog in one tap.
+5. **Print / Save as PDF** opens the browser print dialog. The print stylesheet is black on white, hides the app chrome, keeps each question on one page and starts each topic on a new page.
+6. **Download as .md** saves the same selection as a Markdown file (handy for Notion/Obsidian or for pasting into a group chat).
 
 ---
 
 ## 7. PWA
 
-`public/manifest.webmanifest` and `public/sw.js` make the app installable. The service worker caches the app shell and serves `content/*.json` network-first, so new questions appear on the next load and the last copy still works offline. If a change ever looks stuck, bump `VERSION` in `sw.js`.
+`public/manifest.webmanifest` and `public/sw.js` make the app installable (any orientation, so the unfolded landscape screen works). The service worker serves `content/*.json` **network-first with a no-cache fetch** (never stale; the cached copy is only for offline), pages network-first, and hashed assets cache-first. It calls `skipWaiting()` + `clients.claim()`, so a new deploy takes over at once and the app shows **"New version available — tap to refresh"** (everything is saved before the reload). Bump `VERSION` in `sw.js` on each release (now `mgmt6110-quiz-v4-2026-11-04`).
 
 ---
 
@@ -188,8 +222,9 @@ scripts/sync-content.sh
 src/
   App.jsx                  hash router, profiles, sessions
   styles.css               all styling (light/dark, print)
-  lib/                     content loader, storage, topics, tips, markdown export
-  components/              Header, Home, Session, Summary, PrintView, Tips, Profiles, Ring
+  lib/                     content loader, storage (merge-safe), idb (IndexedDB mirror), session (save/restore),
+                           useMedia (foldable layouts), topics, tips, markdown export
+  components/              Header, Home, Session, Summary, PrintView, Tips, Profiles, Ring, UpdateToast
 ```
 
 ---

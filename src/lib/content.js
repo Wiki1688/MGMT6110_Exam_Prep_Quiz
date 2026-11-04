@@ -10,7 +10,8 @@ async function fetchJson(path) {
 
 function normalise(q) {
   const type = (q.type || 'mcq').toLowerCase();
-  const out = { ...q, type, difficulty: Number(q.difficulty) || 2, quiz4: !!q.quiz4 };
+  const out = { ...q, type, difficulty: Number(q.difficulty) || 2, core: !!q.core };
+  delete out.quiz4; // Quiz 4 (4 Nov) is over; the field is ignored
   if (type === 'mcq') {
     out.options = Array.isArray(q.options) ? q.options : [];
     out.answer = Number(q.answer);
@@ -52,9 +53,14 @@ export async function loadContent() {
     }
   }
   const all = [main, ...extras];
-  const topics = mergeTopics(all.flatMap((c) => c.topics || []));
   const qmap = new Map();
   for (const c of all) for (const q of c.questions || []) if (q && q.id) qmap.set(q.id, normalise(q));
+  // A question whose topic (e.g. T17) has no entry in "topics" still shows up, under a placeholder title.
+  const declared = new Set(all.flatMap((c) => (c.topics || []).map((t) => t && t.id)));
+  const autoTopics = [...new Set([...qmap.values()].map((q) => q.topic))]
+    .filter((id) => id && /^T\d+$/.test(id) && !declared.has(id))
+    .map((id) => ({ id, title: id, short: id }));
+  const topics = mergeTopics([...all.flatMap((c) => c.topics || []), ...autoTopics]);
   const topicIds = new Set(topics.map((t) => t.id));
   const questions = [...qmap.values()].filter((q) => {
     if (!topicIds.has(q.topic)) {

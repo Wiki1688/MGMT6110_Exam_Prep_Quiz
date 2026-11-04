@@ -1,6 +1,7 @@
 import { LETTERS } from './utils.js';
 
 export function questionsToMarkdown({ title, topics, questions, showAnswers }) {
+  // showAnswers: true | false; short questions follow the same switch
   const lines = [`# ${title}`, '', `MGMT6110 Exam Prep Quiz · ${questions.length} questions · ${showAnswers ? 'with answers' : 'test paper (no answers)'}`, ''];
   let n = 0;
   for (const t of topics) {
@@ -9,7 +10,7 @@ export function questionsToMarkdown({ title, topics, questions, showAnswers }) {
     lines.push(`## ${t.id} — ${t.title}`, '');
     for (const q of qs) {
       n += 1;
-      const tag = [q.quiz4 ? 'Quiz 4' : null, `difficulty ${q.difficulty}`].filter(Boolean).join(' · ');
+      const tag = [q.core ? 'Core' : null, `difficulty ${q.difficulty}`].filter(Boolean).join(' · ');
       lines.push(`### ${n}. ${q.stem}`, '', `_${q.id} · ${q.type} · ${tag}_`, '');
       if (q.type === 'mcq') {
         q.options.forEach((o, i) => lines.push(`- ${LETTERS[i]}. ${o}`));
@@ -30,7 +31,7 @@ export function questionsToMarkdown({ title, topics, questions, showAnswers }) {
         } else lines.push('_Write your answer (3–6 sentences):_', '', '&nbsp;', '&nbsp;', '');
       }
       if (showAnswers) {
-        if (q.explanation) lines.push(`**Why:** ${q.explanation}`, '');
+        if (q.explanation) lines.push(`**${q.type === 'short' ? 'What the examiner looks for' : 'Why'}:** ${q.explanation}`, '');
         if (q.trap) lines.push(`**Trap:** ${q.trap}`, '');
         if (q.tip) lines.push(`**Tip:** ${q.tip}`, '');
         if (q.source) lines.push(`_Source: ${q.source}_`, '');

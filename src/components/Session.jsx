@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { LETTERS, fmtTime, encouragementFor, gradeShort, escapeHtml, shuffle, highlightTerms } from '../lib/utils.js';
+import { LETTERS, fmtTime, encouragementFor, gradeShort, shuffle, highlightModelAnswer } from '../lib/utils.js';
 import { Burst } from './Ring.jsx';
+import { isFlagged } from '../lib/storage.js';
+import { useMedia, Q_SPLIT } from '../lib/useMedia.js';
 
 export default function Session({ session, setSession, progress, onAnswer, onFlag, onFinish, onQuit, topics }) {
   const { questions, index, results, timerSec, startedAt } = session;
@@ -8,6 +10,7 @@ export default function Session({ session, setSession, progress, onAnswer, onFla
   const total = questions.length;
   const topic = topics.find((t) => t.id === q.topic);
   const answered = results[q.id] != null;
+  const split = useMedia(Q_SPLIT); // unfolded inner screen: question left, answer right
   const [inter, setInter] = useState(null); // encouragement text
   const [left, setLeft] = useState(timerSec);
   const finishRef = useRef(onFinish);
@@ -69,7 +72,7 @@ export default function Session({ session, setSession, progress, onAnswer, onFla
   });
 
   const pct = (Object.keys(results).length / total) * 100;
-  const flagged = !!progress.flags[q.id];
+  const flagged = isFlagged(progress, q.id);
 
   if (inter) {
     return (
@@ -84,8 +87,14 @@ export default function Session({ session, setSession, progress, onAnswer, onFla
     );
   }
 
+  const flagBtn = (cls) => (
+    <button className={cls + (flagged ? ' on' : '')} onClick={() => onFlag(q.id)} aria-pressed={flagged} title="Flag to revise" data-testid={cls.includes('nav-flag') ? 'nav-flag' : 'flag'}>
+      <span className="star">{flagged ? '★' : '☆'}</span> <span className="flag-l">{flagged ? 'Flagged' : 'Flag'}</span>
+    </button>
+  );
+
   return (
-    <div className="narrow">
+    <div className={'session' + (split ? ' split' : ' narrow')} data-qid={q.id} data-index={index}>
       <div className="session-top">
         <button className="btn sm ghost" onClick={() => { if (Object.keys(results).length === 0 || confirm('Finish this session now? Your answers so far are kept.')) onFinish(session); }}>✕ Finish</button>
         <div className="progress" aria-label="Progress"><div style={{ width: `${pct}%` }} /></div>
@@ -93,28 +102,42 @@ export default function Session({ session, setSession, progress, onAnswer, onFla
         {timerSec != null && <span className={'timer' + (left != null && left <= 60 ? ' low' : '')} aria-live="polite">⏱ {fmtTime(left ?? timerSec)}</span>}
       </div>
 
+      <div className="session-grid">
+      <div className="pane-q">
       <div className="card qcard" key={q.id}>
         <div className="qhead">
           <span className="chip topic" style={{ background: topic?.color || '#64748B' }}>{q.topic}</span>
           <span className="chip">{q.type === 'mcq' ? 'MCQ' : q.type === 'matching' ? 'Matching' : 'Short answer'}</span>
           <span className="chip" title="difficulty">{'●'.repeat(q.difficulty)}{'○'.repeat(3 - q.difficulty)}</span>
-          {q.quiz4 && <span className="chip brand">Quiz 4</span>}
-          <button className={'flag-btn' + (flagged ? ' on' : '')} onClick={() => onFlag(q.id)} aria-pressed={flagged} title="Flag to revise">
-            <span className="star">{flagged ? '★' : '☆'}</span> {flagged ? 'Flagged' : 'Flag to revise'}
-          </button>
+          {q.core && <span className="chip brand">Core</span>}
+          {flagBtn('flag-btn')}
         </div>
         <div className="stem">{q.stem}</div>
 
         {q.type === 'mcq' && <Mcq q={q} order={session.optOrder[q.id]} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
         {q.type === 'matching' && <Matching q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
-        {q.type === 'short' && <Short q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
+        {q.type === 'short' && <Short q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} split={split} />}
 
-        {answered && <AnswerPanel q={q} result={results[q.id]} order={session.optOrder[q.id]} />}
+      </div>
+      </div>
+      <aside className="pane-a" aria-label="Answer and why">
+        {split && q.type === 'short' && qstate.revealed && <ShortReveal q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
+        {answered ? (
+          <AnswerPanel q={q} result={results[q.id]} order={session.optOrder[q.id]} />
+        ) : split && !(q.type === 'short' && qstate.revealed) ? (
+          <div className="answer-wait">
+            <div className="aw-ic" aria-hidden>💡</div>
+            <b>Answer & why</b>
+            <p className="muted">{q.type === 'short' ? 'Write your answer, reveal the model answer, then grade yourself. The verdict, trap and tip appear here.' : 'Pick an option. The correct answer, the reason, the trap and a tip appear here.'}</p>
+          </div>
+        ) : null}
+      </aside>
       </div>
 
       <div className="session-nav">
-        <button className="btn" onClick={prev} disabled={index === 0}>← Previous</button>
-        <button className={'btn' + (answered ? ' primary' : '')} onClick={next}>{index + 1 >= total ? 'Finish ✓' : answered ? 'Next →' : 'Skip →'}</button>
+        <button className="btn" onClick={prev} disabled={index === 0} aria-label="Previous question">← <span className="nl">Prev</span></button>
+        {flagBtn('btn nav-flag')}
+        <button className={'btn next' + (answered ? ' primary' : '')} onClick={next} data-testid="next">{index + 1 >= total ? 'Finish ✓' : answered ? 'Next →' : 'Skip →'}</button>
       </div>
       <div className="kbd no-print">Keys: <kbd>1</kbd>–<kbd>4</kbd> or <kbd>A</kbd>–<kbd>D</kbd> to answer · <kbd>←</kbd> <kbd>→</kbd> to move</div>
     </div>
@@ -207,29 +230,10 @@ function Matching({ q, qstate, setQState, onAnswer }) {
   );
 }
 
-function Short({ q, qstate, setQState, onAnswer }) {
+function Short({ q, qstate, setQState, onAnswer, split }) {
   const text = qstate.text || '';
   const revealed = !!qstate.revealed;
   const graded = qstate.grade;
-  const { hit, missed } = gradeShort(text, q.keywords);
-  const highlighted = useMemo(() => {
-    // One combined pattern (longest first) so marks never nest or match inside a tag.
-    const kws = highlightTerms(q.keywords);
-    if (!kws.length) return escapeHtml(q.modelAnswer || '');
-    const re = new RegExp(kws.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'), 'gi');
-    const src = String(q.modelAnswer || '');
-    let html = '', last = 0, m;
-    while ((m = re.exec(src))) {
-      if (!m[0]) { re.lastIndex += 1; continue; }
-      html += escapeHtml(src.slice(last, m.index)) + '<mark>' + escapeHtml(m[0]) + '</mark>';
-      last = m.index + m[0].length;
-    }
-    return html + escapeHtml(src.slice(last));
-  }, [q]);
-  const grade = (g) => {
-    setQState({ grade: g });
-    onAnswer(q.id, g);
-  };
   return (
     <div>
       <textarea className="short" placeholder="Write your own answer first (3–6 sentences). Then reveal the model answer and grade yourself." value={text} onChange={(e) => setQState({ text: e.target.value })} disabled={!!graded} />
@@ -239,10 +243,33 @@ function Short({ q, qstate, setQState, onAnswer }) {
           <span className="small muted" style={{ alignSelf: 'center' }}>{text.trim().split(/\s+/).filter(Boolean).length} words</span>
         </div>
       )}
-      {revealed && (
+      {revealed && !split && <ShortReveal q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
+      {revealed && split && !graded && <p className="small muted" style={{ marginTop: 10 }}>The model answer is on the right. Compare, then grade yourself there.</p>}
+    </div>
+  );
+}
+
+/** Model answer (keywords highlighted) + "What the examiner looks for" + self-grade.
+ *  Under the answer on the cover screen; in the right-hand pane on the unfolded screen. */
+function ShortReveal({ q, qstate, setQState, onAnswer }) {
+  const text = qstate.text || '';
+  const graded = qstate.grade;
+  const { hit, missed } = gradeShort(text, q.keywords);
+  const highlighted = useMemo(() => highlightModelAnswer(q.modelAnswer, q.keywords), [q]);
+  const grade = (g) => {
+    setQState({ grade: g });
+    onAnswer(q.id, g);
+  };
+  return (
         <div className="model-answer">
-          <h3 style={{ marginBottom: 6 }}>Model answer</h3>
-          <p dangerouslySetInnerHTML={{ __html: highlighted }} />
+          <h3 style={{ marginBottom: 6 }}>Model answer <span className="small muted" style={{ fontWeight: 500 }}>· keywords highlighted</span></h3>
+          <p className="ma-text" dangerouslySetInnerHTML={{ __html: highlighted }} />
+          {q.explanation && (
+            <div className="examiner" data-testid="examiner">
+              <div className="ex-h">🧑‍🏫 What the examiner looks for</div>
+              <div>{q.explanation}</div>
+            </div>
+          )}
           {q.keywords.length > 0 && (
             <div>
               <div className="small muted" style={{ marginBottom: 4 }}>Keywords found in your answer: {hit.length}/{q.keywords.length}</div>
@@ -261,8 +288,6 @@ function Short({ q, qstate, setQState, onAnswer }) {
             <div style={{ marginTop: 10, fontWeight: 700 }}>You graded this: {graded === 'correct' ? '✓ Got it' : graded === 'partly' ? '½ Partly' : '✗ Missed'}</div>
           )}
         </div>
-      )}
-    </div>
   );
 }
 
@@ -277,7 +302,8 @@ function AnswerPanel({ q, result, order }) {
         <span className="muted" style={{ fontWeight: 500 }}>· Answer & why</span>
       </h3>
       {q.type === 'mcq' && !ok && <div className="ap-row"><span className="ic">✅</span><div><span className="lab">Correct answer:</span>{LETTERS[shownIdx]}. {q.options[q.answer]}</div></div>}
-      {q.explanation && <div className="ap-row"><span className="ic">💡</span><div><span className="lab">Why:</span>{q.explanation}</div></div>}
+      {q.explanation && q.type !== 'short' && <div className="ap-row"><span className="ic">💡</span><div><span className="lab">Why:</span>{q.explanation}</div></div>}
+      {q.type === 'short' && q.keywords?.length > 0 && <div className="ap-row"><span className="ic">🔑</span><div><span className="lab">Keywords to use:</span>{q.keywords.join(' · ')}</div></div>}
       {q.trap && <div className="ap-row trap"><span className="ic">⚠️</span><div><span className="lab">Trap:</span>{q.trap}</div></div>}
       {q.tip && <div className="ap-row"><span className="ic">🎯</span><div><span className="lab">Tip:</span>{q.tip}</div></div>}
       {q.source && <div className="ap-row source"><span className="ic">📎</span><div><span className="lab">Source:</span>{q.source}</div></div>}
