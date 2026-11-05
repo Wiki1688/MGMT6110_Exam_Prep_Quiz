@@ -38,7 +38,7 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
   const leaderboard = useMemo(() => profilesData.profiles.map((p) => {
     const prog = p.id === current?.id ? progressCurrent : loadProgress(p.id);
     const bestOf = (m) => prog.best?.[m];
-    return { p, mock: bestOf('mock'), quick: bestOf('quick10'), core: bestOf('core'), answered: prog.totals?.answered || 0, streak: prog.streak?.count || 0 };
+    return { p, mock: bestOf('mock'), quick: bestOf('quiz40'), core: bestOf('core'), answered: prog.totals?.answered || 0, streak: prog.streak?.count || 0 };
   }).sort((a, b) => (b.mock?.pct ?? -1) - (a.mock?.pct ?? -1) || (b.core?.pct ?? -1) - (a.core?.pct ?? -1) || b.answered - a.answered), [profilesData, progressCurrent, current]);
 
   const stats = progressStats(progressCurrent, questionIds);
@@ -51,13 +51,13 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
       const data = parseImport(await f.text());
       setPendingImport(data);
     } catch (err) {
-      setMsg('Import failed: ' + err.message);
+      setMsg(err.oldFormat ? err.message : 'Import failed: ' + err.message);
     }
   };
 
   return (
     <div className="narrow">
-      {msg && <div className="banner" role="status">{msg} <button className="btn sm ghost" onClick={() => setMsg('')}>OK</button></div>}
+      {msg && <div className="banner" role="status" data-testid="import-msg">{msg} <button className="btn sm ghost" onClick={() => setMsg('')}>OK</button></div>}
       <div className="card">
         <div className="section-title" style={{ margin: '0 0 10px' }}><h2>Profiles on this device</h2><button className="btn sm primary" onClick={onAdd}>➕ New</button></div>
         <div className="profile-list">
@@ -86,6 +86,8 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
           {current && <span className="chip">Last backup: {progressCurrent.backupAt ? fmtDate(progressCurrent.backupAt) : 'never'}</span>}
         </div>
         <p className="muted small">Progress is saved on this device the moment you answer (and copied to a second store in the browser). {persist === 'protected' ? 'The browser has agreed not to clear it.' : 'The phone may still clear it when storage runs low, so back up now and then.'} A backup is a small file: send it to yourself (WhatsApp, email) and import it on another device.</p>
+        <p className="small muted">New question bank (5 Nov): progress started fresh for everyone. Backup files from the old bank cannot be imported; files made by this version can.</p>
+        {msg && <div className="banner" role="status" data-testid="import-msg-inline">{msg}</div>}
         {current && <p className="small">{current.emoji} <b>{current.name}</b>: {stats.answered} answered · {stats.correct} correct last time · {stats.flagged} flagged</p>}
         <div className="btn-row">
           <button className="btn primary" onClick={onBackup} disabled={!current}>💾 Back up now (.json)</button>
@@ -109,7 +111,7 @@ export default function Profiles({ profilesData, progressCurrent, current, onSwi
       <div className="card">
         <h2>🏆 Leaderboard (this device)</h2>
         <div style={{ overflowX: 'auto' }}><table className="leaderboard">
-          <thead><tr><th>#</th><th>Who</th><th>Mock</th><th>Core</th><th>Quick 10</th><th>Done</th><th>Streak</th></tr></thead>
+          <thead><tr><th>#</th><th>Who</th><th>Mock</th><th>Core</th><th>40 quiz</th><th>Done</th><th>Streak</th></tr></thead>
           <tbody>
             {leaderboard.map((row, i) => (
               <tr key={row.p.id}>

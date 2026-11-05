@@ -15,6 +15,10 @@ export const TOPICS = [
   { id: 'T13', short: 'Week 9 — Mapping the Territory', title: 'Week 9 — Building AI Agents III: Mapping the Territory (Q1–Q6, ladder, territory map, IMDA/MAS)', week: 'Week 9', color: '#16A34A' },
   { id: 'T14', short: 'PS6 — Earnings Watch + Co-Collaboration Model', title: "PS6 — Earnings Watch + Prof Roh's Co-Collaboration Model", week: 'Week 9', color: '#F59E0B' },
   { id: 'T15', short: 'Group showcases 1–6', title: 'Group showcases 1–6 as exam scenarios', week: 'Weeks 3–9', color: '#64748B' },
+  { id: 'T17', short: 'Human-AI Co-Collaboration Model', title: 'Human-AI Co-Collaboration Model', week: 'Week 10', color: '#BE185D' },
+  { id: 'T18', short: 'PS7 — The Same But Different', title: 'PS7 — The Same But Different: one job, different families of AI agents', week: 'Week 9–10', color: '#0F766E' },
+  { id: 'T19', short: 'PS8 — Within the Policy (Muse)', title: "PS8 — Within the Policy: a business trip planned by Meta's Muse", week: 'Week 10 studio', color: '#B45309' },
+  { id: 'T20', short: 'Week 10 — The harness', title: 'Week 10 — Building AI Agents IV: inside the harness', week: 'Week 10', color: '#475569' },
   { id: 'T16', short: 'Exam strategy', title: 'Exam strategy — how Prof Roh writes questions', week: '—', color: '#111827' },
 ];
 

@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadContent } from './lib/content.js';
 import {
   loadProfiles, saveProfiles, mergeProfiles, loadProgress, saveProgress, writeProgress, deleteProgress, loadSettings, saveSettings,
-  recordAnswer, toggleFlag, recordSession, emptyProgress, uid, mergeProgress, normaliseProgress, freshEpoch,
+  recordAnswer, toggleFlag, recordSession, emptyProgress, uid, mergeProgress, normaliseProgress, freshEpoch, answerFraction,
   loadSession, saveSession, loadSummary, saveSummary, exportProfile, isFlagged, requestPersistentStorage, getPersistState,
   K_PROGRESS, K_PROFILES,
 } from './lib/storage.js';
 import { serialiseSession, hydrateSession, serialiseSummary, hydrateSummary } from './lib/session.js';
 import { shuffle, download } from './lib/utils.js';
+import { quiz40, byPriority } from './lib/content.js';
 import Header from './components/Header.jsx';
 import Home from './components/Home.jsx';
 import Session from './components/Session.jsx';
@@ -18,7 +19,37 @@ import Profiles from './components/Profiles.jsx';
 import { ProfileSheet } from './components/Profiles.jsx';
 import UpdateToast from './components/UpdateToast.jsx';
 
-const SCORED_MODES = ['mock', 'quick10', 'core', 'topic', 'short'];
+const SCORED_MODES = ['mock', 'quiz40', 'partb', 'core', 'topic'];
+
+/** Exam weights: in the mock final a short (Part B) question is worth 4 points, an MCQ 1. Elsewhere every question counts 1. */
+const weightOf = (mode, q) => (mode === 'mock' && q.type === 'short' ? 4 : 1);
+
+/** Weighted random pick without replacement: priority 1 weight 3, priority 2 weight 2, priority 3 weight 1. */
+function weightedPick(list, n) {
+  const pool = [...list];
+  const out = [];
+  while (out.length < n && pool.length) {
+    const w = pool.map((q) => (q.priority === 1 ? 3 : q.priority === 2 ? 2 : 1));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0);
+    let i = 0;
+    while (i < pool.length - 1 && (r -= w[i]) > 0) i += 1;
+    out.push(pool.splice(i, 1)[0]);
+  }
+  return out;
+}
+
+/** Mock final = Part A 10 MCQs (at least 4 of Prof Roh's official ones) + Part B 5 short questions (at least 1 official Part B). */
+export function buildMockFinal(questions) {
+  const mcq = questions.filter((q) => q.type === 'mcq');
+  const off = mcq.filter((q) => q.priority === 1);
+  const a1 = shuffle(off).slice(0, Math.min(4, off.length));
+  const a = [...a1, ...weightedPick(mcq.filter((q) => !a1.includes(q)), 10 - a1.length)];
+  const shorts = questions.filter((q) => q.type === 'short');
+  const pb = shorts.filter((q) => q.priority === 1);
+  const b1 = shuffle(pb).slice(0, Math.min(1, pb.length));
+  const b = [...b1, ...weightedPick(shorts.filter((q) => !b1.includes(q)), 5 - b1.length)];
+  return [...shuffle(a), ...shuffle(b)];
+}
 
 function useHashRoute() {
   const get = () => (window.location.hash.replace(/^#\/?/, '').split('?')[0] || 'home');
@@ -255,18 +286,25 @@ export default function App() {
     // spec: { mode, title, topics?, count?, timerMinutes?, questions? (ids), shuffleQ?, shuffleOpts? }
     const prog = progressRef.current;
     let qs;
+    let fixedOrder = false; // the mock final and the 40 quiz questions build their own order
     if (spec.questions) {
       const ids = new Set(spec.questions);
-      qs = content.questions.filter((q) => ids.has(q.id));
+      qs = content.questions.filter((q) => ids.has(q.id)); // already in priority order
+    } else if (spec.mode === 'quiz40') {
+      qs = quiz40(content.questions); // Q1.1 → Q4.10, ignores filters on purpose
+    } else if (spec.mode === 'mock') {
+      qs = buildMockFinal(content.questions);
+      fixedOrder = true;
     } else {
-      // "Short questions" ignores the type filter on purpose: the student asked for short ones.
-      qs = spec.mode === 'short' ? content.questions.filter((q) => q.type === 'short') : filteredPool;
+      // Part B practice ignores the type filter on purpose: the student asked for short ones.
+      qs = spec.mode === 'partb' ? content.questions.filter((q) => q.type === 'short') : filteredPool;
       if (spec.mode === 'core') qs = qs.filter((q) => q.core);
       if (spec.topics?.length) qs = qs.filter((q) => spec.topics.includes(q.topic));
       if (spec.mode === 'wrong') qs = qs.filter((q) => prog.answers[q.id]?.last === 'wrong' || prog.answers[q.id]?.last === 'partly');
       if (spec.mode === 'flagged') qs = qs.filter((q) => isFlagged(prog, q.id));
+      qs = [...qs].sort(byPriority);
     }
-    const shuffleQ = spec.shuffleQ ?? settings.shuffleQ;
+    const shuffleQ = !fixedOrder && (spec.shuffleQ ?? settings.shuffleQ);
     if (shuffleQ) qs = shuffle(qs);
     if (spec.count) qs = qs.slice(0, spec.count);
     if (!qs.length) return false;
@@ -284,6 +322,7 @@ export default function App() {
       startedAt: now,
       createdAt: now,
       results: {},
+      marks: {},
       qstate: {},
       index: 0,
     });
@@ -307,18 +346,28 @@ export default function App() {
     refreshSavedInfo();
   }, [refreshSavedInfo]);
 
-  const answerQuestion = useCallback((qid, result) => {
-    commitProgress((p) => recordAnswer(p, qid, result));
-    updateSession((s) => (s ? { ...s, results: { ...s.results, [qid]: result } } : s));
+  /** mark (optional): { score, of } for a four-part short question, e.g. { score: 3, of: 4 }. */
+  const answerQuestion = useCallback((qid, result, mark = null) => {
+    commitProgress((p) => recordAnswer(p, qid, result, mark));
+    updateSession((s) => (s ? { ...s, results: { ...s.results, [qid]: result }, marks: mark ? { ...(s.marks || {}), [qid]: mark } : (s.marks || {}) } : s));
   }, [commitProgress, updateSession]);
 
   const finishSession = useCallback((s) => {
     const answered = Object.keys(s.results).length;
-    const score = Object.values(s.results).reduce((a, r) => a + (r === 'correct' ? 1 : r === 'partly' ? 0.5 : 0), 0);
-    const total = s.questions.length;
+    const marks = s.marks || {};
+    let score = 0, total = 0;
+    const parts = { A: { score: 0, total: 0 }, B: { score: 0, total: 0 } };
+    for (const q of s.questions) {
+      const w = weightOf(s.mode, q);
+      const got = s.results[q.id] != null ? w * answerFraction(s.results[q.id], marks[q.id]) : 0;
+      score += got; total += w;
+      const part = q.type === 'short' ? parts.B : parts.A;
+      part.score += got; part.total += w;
+    }
+    score = Math.round(score * 100) / 100;
     const pct = total ? Math.round((score / total) * 100) : 0;
     const seconds = Math.round((Date.now() - s.startedAt) / 1000);
-    const summary = { mode: s.mode, title: s.title, score, total, answered, pct, seconds, at: Date.now(), questions: s.questions, results: s.results };
+    const summary = { mode: s.mode, title: s.title, score, total, answered, pct, seconds, at: Date.now(), questions: s.questions, results: s.results, marks, parts: s.mode === 'mock' ? parts : null };
     if (answered > 0 && SCORED_MODES.includes(s.mode)) {
       commitProgress((p) => recordSession(p, { mode: s.mode, title: s.title, score, total, pct, seconds, at: summary.at }));
     }

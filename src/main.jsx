@@ -1,10 +1,12 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.jsx';
-import { restoreFromMirror } from './lib/storage.js';
+import { restoreFromMirror, clearOldStorage } from './lib/storage.js';
 import './styles.css';
 
 // If the phone cleared localStorage but the IndexedDB mirror survived, copy it back before the app reads anything.
+// v3: progress starts fresh — remove the old namespace's keys once (never read them).
+clearOldStorage();
 restoreFromMirror().finally(() => {
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>

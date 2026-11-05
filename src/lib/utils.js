@@ -12,7 +12,7 @@ export function pick(arr, n) {
 }
 
 // One countdown only (Quiz 4 on 4 Nov is over).
-export const FINAL_EXAM = { key: 'final', label: 'Final exam', when: 'Thu 12 Nov 2026 · 1 pm', iso: '2026-11-12T13:00:00+08:00', sub: '2 h · closed book · 30%' };
+export const FINAL_EXAM = { key: 'final', label: 'Final exam', when: 'Thu 12 Nov 2026 · 1 pm', iso: '2026-11-12T13:00:00+08:00', sub: '15 questions · 30 points · closed book, no AI · 30%' };
 export const EXAMS = [FINAL_EXAM];
 
 /** Message for the countdown card; special wording on exam day (Asia/Singapore). */
@@ -58,7 +58,7 @@ export const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
 export const ENCOURAGEMENT = [
   'Nice rhythm. Keep reading every option before you choose.',
-  'Five done. Remember: the slide sentence is usually the right one.',
+  'Five done. In Part B, a definition alone earns one point of four: apply it and name the check.',
   'You are building the habit that the closed-book exam rewards.',
   'Good. If a word sounds like marketing, look for the mechanism instead.',
   'Steady. Each question you get wrong now is one you will not get wrong on the day.',
@@ -163,4 +163,9 @@ export function download(filename, text, type = 'text/plain') {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Strip a leading "Right." / "Wrong:" / "RIGHT:" and wrapping quotes from a why[] line: the ✓ / ✗ already says it. */
+export function cleanWhy(w) {
+  return String(w || '').replace(/^\s*[✓✗✔✘×]\s*/, '').replace(/^\s*(right|wrong|correct|incorrect)\s*[.:\-–—]\s*/i, '').replace(/^['‘"“](.*)['’"”]$/s, '$1').trim();
 }

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 
 const NAV = [
   ['home', '🏠', 'Home', 'Home'],
-  ['tips', '💡', 'Tips & Traps', 'Tips'],
+  ['tips', '💡', 'Exam format & tips', 'Exam'],
   ['print', '🖨️', 'Print & export', 'Print'],
   ['profiles', '👥', 'Profiles', 'Profiles'],
 ];

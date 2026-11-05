@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { LETTERS, fmtTime, encouragementFor, gradeShort, shuffle, highlightModelAnswer } from '../lib/utils.js';
+import { LETTERS, fmtTime, encouragementFor, gradeShort, shuffle, highlightModelAnswer, cleanWhy } from '../lib/utils.js';
 import { Burst } from './Ring.jsx';
 import { isFlagged } from '../lib/storage.js';
 import { useMedia, Q_SPLIT } from '../lib/useMedia.js';
+import CaseText from './CaseText.jsx';
+import PriorityBadge from './Badge.jsx';
+import { PartsWork, PartsReveal, partScore } from './Parts.jsx';
 
 export default function Session({ session, setSession, progress, onAnswer, onFlag, onFinish, onQuit, topics }) {
   const { questions, index, results, timerSec, startedAt } = session;
@@ -106,29 +109,33 @@ export default function Session({ session, setSession, progress, onAnswer, onFla
       <div className="pane-q">
       <div className="card qcard" key={q.id}>
         <div className="qhead">
+          <PriorityBadge q={q} />
           <span className="chip topic" style={{ background: topic?.color || '#64748B' }}>{q.topic}</span>
-          <span className="chip">{q.type === 'mcq' ? 'MCQ' : q.type === 'matching' ? 'Matching' : 'Short answer'}</span>
+          <span className="chip">{q.type === 'mcq' ? (session.mode === 'mock' ? 'Part A · 1 point' : 'MCQ') : q.type === 'matching' ? 'Matching' : q.parts ? (session.mode === 'mock' ? 'Part B · 4 points' : 'Short · 4 parts') : 'Short answer'}</span>
           <span className="chip" title="difficulty">{'●'.repeat(q.difficulty)}{'○'.repeat(3 - q.difficulty)}</span>
           {q.core && <span className="chip brand">Core</span>}
           {flagBtn('flag-btn')}
         </div>
-        <div className="stem">{q.stem}</div>
+        <CaseText text={q.stem} />
 
         {q.type === 'mcq' && <Mcq q={q} order={session.optOrder[q.id]} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
         {q.type === 'matching' && <Matching q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
-        {q.type === 'short' && <Short q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} split={split} />}
+        {q.type === 'short' && q.parts && <PartsWork q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} inline={!split} />}
+        {q.type === 'short' && q.parts && !split && Object.keys(qstate.prev || {}).length > 0 && <PartsTotal q={q} qstate={qstate} />}
+        {q.type === 'short' && !q.parts && <Short q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} split={split} />}
 
       </div>
       </div>
       <aside className="pane-a" aria-label="Answer and why">
-        {split && q.type === 'short' && qstate.revealed && <ShortReveal q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
+        {split && q.type === 'short' && !q.parts && qstate.revealed && <ShortReveal q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
+        {split && q.type === 'short' && q.parts && <PartsReveal q={q} qstate={qstate} setQState={setQState} onAnswer={onAnswer} />}
         {answered ? (
-          <AnswerPanel q={q} result={results[q.id]} order={session.optOrder[q.id]} />
-        ) : split && !(q.type === 'short' && qstate.revealed) ? (
+          <AnswerPanel q={q} result={results[q.id]} order={session.optOrder[q.id]} mark={(session.marks || {})[q.id]} picked={qstate.picked} />
+        ) : split && !(q.type === 'short' && (qstate.revealed || Object.keys(qstate.prev || {}).length)) ? (
           <div className="answer-wait">
             <div className="aw-ic" aria-hidden>💡</div>
             <b>Answer & why</b>
-            <p className="muted">{q.type === 'short' ? 'Write your answer, reveal the model answer, then grade yourself. The verdict, trap and tip appear here.' : 'Pick an option. The correct answer, the reason, the trap and a tip appear here.'}</p>
+            <p className="muted">{q.type === 'short' && q.parts ? 'Write (a)–(d) on the left if you like, then reveal each part. Its model answer appears here: mark it 0 or 1. Your score out of 4 is saved when all four are marked.' : q.type === 'short' ? 'Write your answer, reveal the model answer, then grade yourself. The verdict, trap and tip appear here.' : 'Pick an option. The correct answer, why each option is right or wrong, the trap and a tip appear here.'}</p>
           </div>
         ) : null}
       </aside>
@@ -291,22 +298,47 @@ function ShortReveal({ q, qstate, setQState, onAnswer }) {
   );
 }
 
-function AnswerPanel({ q, result, order }) {
+function PartsTotal({ q, qstate }) {
+  const { score, done } = partScore(qstate, q.parts.length);
+  return <div className="pm-total" data-testid="parts-score">{done}/{q.parts.length} parts marked · {score}/{q.parts.length} points so far</div>;
+}
+
+function AnswerPanel({ q, result, order, mark, picked }) {
   // Letter as the student saw it (options may be shuffled)
   const shownIdx = order ? order.indexOf(q.answer) : q.answer;
   const ok = result === 'correct';
+  const parts = q.type === 'short' && q.parts;
+  const verdict = parts && mark ? `${mark.score}/${mark.of} points` : ok ? '✓ Correct' : result === 'partly' ? '½ Partly right' : '✗ Not quite';
+  const seen = order || (q.options || []).map((_, i) => i);
   return (
     <div className="answer-panel" aria-live="polite">
       <h3>
-        <span className={'verdict ' + (ok ? 'ok' : result === 'partly' ? '' : 'bad')}>{ok ? '✓ Correct' : result === 'partly' ? '½ Partly right' : '✗ Not quite'}</span>
-        <span className="muted" style={{ fontWeight: 500 }}>· Answer & why</span>
+        <span className={'verdict ' + (ok ? 'ok' : result === 'partly' ? '' : 'bad')} data-testid="verdict">{parts && mark ? (ok ? '✓ ' : result === 'partly' ? '◑ ' : '✗ ') + verdict : verdict}</span>
+        <span className="muted" style={{ fontWeight: 500 }}>· {parts ? 'Your Part B mark' : 'Answer & why'}</span>
       </h3>
       {q.type === 'mcq' && !ok && <div className="ap-row"><span className="ic">✅</span><div><span className="lab">Correct answer:</span>{LETTERS[shownIdx]}. {q.options[q.answer]}</div></div>}
-      {q.explanation && q.type !== 'short' && <div className="ap-row"><span className="ic">💡</span><div><span className="lab">Why:</span>{q.explanation}</div></div>}
-      {q.type === 'short' && q.keywords?.length > 0 && <div className="ap-row"><span className="ic">🔑</span><div><span className="lab">Keywords to use:</span>{q.keywords.join(' · ')}</div></div>}
-      {q.trap && <div className="ap-row trap"><span className="ic">⚠️</span><div><span className="lab">Trap:</span>{q.trap}</div></div>}
-      {q.tip && <div className="ap-row"><span className="ic">🎯</span><div><span className="lab">Tip:</span>{q.tip}</div></div>}
-      {q.source && <div className="ap-row source"><span className="ic">📎</span><div><span className="lab">Source:</span>{q.source}</div></div>}
+      {q.type === 'mcq' && q.why && (
+        <div className="why-each" data-testid="why-each">
+          <div className="we-h">Why each option</div>
+          <ol className="we-list">
+            {seen.map((orig, s) => {
+              const right = orig === q.answer;
+              return (
+                <li key={orig} className={'we-row' + (right ? ' right' : ' wrong') + (picked === orig ? ' picked' : '')} data-right={right ? '1' : '0'}>
+                  <span className="we-k">{LETTERS[s]}</span>
+                  <span className="we-mark" aria-label={right ? 'right' : 'wrong'}>{right ? '✓' : '✗'}</span>
+                  <span className="we-txt">{cleanWhy(q.why[orig])}{picked === orig && <em className="we-you"> · your pick</em>}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      )}
+      {q.explanation && q.type !== 'short' && <div className="ap-row"><span className="ic">💡</span><div><span className="lab">{q.why ? 'In short:' : 'Why:'}</span>{q.explanation}</div></div>}
+      {q.type === 'short' && !parts && q.keywords?.length > 0 && <div className="ap-row"><span className="ic">🔑</span><div><span className="lab">Keywords to use:</span>{q.keywords.join(' · ')}</div></div>}
+      {!parts && q.trap && <div className="ap-row trap"><span className="ic">⚠️</span><div><span className="lab">Trap:</span>{q.trap}</div></div>}
+      {!parts && q.tip && <div className="ap-row"><span className="ic">🎯</span><div><span className="lab">Tip:</span>{q.tip}</div></div>}
+      {q.source && <div className="ap-row source"><span className="ic">📎</span><div><span className="lab">{q.priority === 1 || q.priority === 2 ? 'Where we met it:' : 'Source:'}</span>{q.source}</div></div>}
     </div>
   );
 }

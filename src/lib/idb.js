@@ -1,8 +1,10 @@
 // Tiny IndexedDB key-value mirror (no library). Every localStorage save is copied here,
 // so if the phone clears localStorage we can restore from IndexedDB on the next start.
 // All calls are best-effort: they never throw and resolve to null/undefined on failure.
-const DB_NAME = 'mgmt6110-quiz-backup';
-const STORE = 'kv';
+// v3: new database (the old one, 'mgmt6110-quiz-backup', is deleted once and never read).
+const DB_NAME = 'mgmt6110-quiz3-backup';
+const STORE = 'kv3';
+export const OLD_DB_NAME = 'mgmt6110-quiz-backup';
 let dbPromise = null;
 
 function openDb() {
@@ -59,4 +61,13 @@ export async function idbAll() {
   } catch {
     return [];
   }
+}
+
+/** Best-effort delete of a whole database (used once to remove the old v1/v2 mirror). */
+export function idbDeleteDatabase(name) {
+  try {
+    if (typeof indexedDB === 'undefined') return;
+    const req = indexedDB.deleteDatabase(name);
+    req.onerror = req.onblocked = req.onsuccess = () => {};
+  } catch { /* ignore */ }
 }

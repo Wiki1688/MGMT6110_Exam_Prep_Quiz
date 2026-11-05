@@ -8,15 +8,19 @@
 //  * Every localStorage write is mirrored to IndexedDB; on start-up a missing or corrupt
 //    localStorage key is restored from the mirror.
 //  * Every read/write is wrapped in try/catch so the app still works in private windows.
-import { idbSet, idbDelete, idbAll } from './idb.js';
+import { idbSet, idbDelete, idbAll, idbDeleteDatabase, OLD_DB_NAME } from './idb.js';
 
-export const NS = 'mgmt6110quiz:';
+// v3 (5 Nov 2026): the question bank was replaced, so progress starts fresh for everyone in a NEW namespace.
+// The old 'mgmt6110quiz:' keys are never read; they are deleted once on first load (see clearOldStorage).
+export const NS = 'mgmt6110quiz3:';
+export const OLD_NS = 'mgmt6110quiz:';
 export const K_PROFILES = NS + 'profiles';
 export const K_SETTINGS = NS + 'settings';
 export const K_PROGRESS = (id) => NS + 'progress:' + id;
 export const K_SESSION = (id) => NS + 'session:' + id;
 export const K_SUMMARY = (id) => NS + 'summary:' + id;
-export const EXPORT_FORMAT = 2;
+export const EXPORT_FORMAT = 3;
+export const OLD_FILE_MESSAGE = 'This file is from the old question bank, which has been replaced. Progress starts fresh in this version, so it cannot be imported.';
 
 export function readJson(key, fallback) {
   try {
@@ -76,6 +80,24 @@ export async function restoreFromMirror(timeoutMs = 1500) {
   }
 }
 
+/** Once per device: delete every key of the old (v1/v2) namespace and the old IndexedDB mirror. Never reads them. */
+export function clearOldStorage() {
+  const flag = NS + 'oldCleared';
+  try { if (localStorage.getItem(flag)) return 0; } catch { /* private mode: still try */ }
+  let n = 0;
+  for (const store of [() => localStorage, () => sessionStorage]) {
+    try {
+      const st = store();
+      const keys = [];
+      for (let i = 0; i < st.length; i++) { const k = st.key(i); if (k && k.startsWith(OLD_NS)) keys.push(k); }
+      keys.forEach((k) => { st.removeItem(k); n += 1; });
+    } catch { /* ignore */ }
+  }
+  idbDeleteDatabase(OLD_DB_NAME);
+  try { localStorage.setItem(flag, String(Date.now())); } catch { /* ignore */ }
+  return n;
+}
+
 // ---- persistent storage (Android may otherwise evict site data under storage pressure) ----
 let persistState = 'unknown';
 export function getPersistState() { return persistState; }
@@ -98,7 +120,7 @@ export function uid() {
 }
 
 export const emptyProgress = () => ({
-  v: 2,
+  v: 3,
   epoch: null, // changes on Reset / Replace; a newer epoch wins over an older one when merging
   epochAt: 0,
   answers: {}, // qid -> { attempts, correct, wrong, last, lastAt }
@@ -149,12 +171,13 @@ export function normaliseProgress(p) {
       wrong: Number(a.wrong) || 0,
       last: a.last || null,
       lastAt: Number(a.lastAt) || 0,
+      ...(a.lastOf ? { lastScore: Number(a.lastScore) || 0, lastOf: Number(a.lastOf) } : {}),
     };
   }
   return {
     ...base,
     ...p,
-    v: 2,
+    v: 3,
     epoch: p.epoch || null,
     epochAt: Number(p.epochAt) || 0,
     answers,
@@ -254,7 +277,7 @@ export function saveSummary(id, s) {
 // ---------- settings ----------
 export const defaultSettings = () => ({
   theme: 'auto', // auto | light | dark
-  shuffleQ: true,
+  shuffleQ: false, // v3: keep the priority order (Prof Roh's questions first) unless the student asks to shuffle
   shuffleOpts: false,
   timer: true,
   types: { mcq: true, matching: true, short: true },
@@ -275,13 +298,24 @@ export function todayKey(d = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 
-export function recordAnswer(progress, qid, result /* 'correct' | 'wrong' | 'partly' */) {
+/** Fraction of a mark (0..1) for a stored answer record or a session result. */
+export function answerFraction(a, mark) {
+  if (!a) return 0;
+  const last = typeof a === 'string' ? a : a.last;
+  const m = mark || (typeof a === 'object' && a.lastOf ? { score: a.lastScore, of: a.lastOf } : null);
+  if (m && m.of > 0) return Math.max(0, Math.min(1, (Number(m.score) || 0) / m.of));
+  return last === 'correct' ? 1 : last === 'partly' ? 0.5 : 0;
+}
+
+/** result: 'correct' | 'wrong' | 'partly'; mark (optional, 4-part short questions): { score, of } e.g. { score: 3, of: 4 }. */
+export function recordAnswer(progress, qid, result, mark = null) {
   const now = Date.now();
   const a = { ...(progress.answers[qid] || { attempts: 0, correct: 0, wrong: 0 }) };
   a.attempts += 1;
   if (result === 'correct') a.correct += 1;
   else if (result === 'wrong') a.wrong += 1;
-  else a.correct += 0.5;
+  else a.correct += mark && mark.of ? Math.round((mark.score / mark.of) * 100) / 100 : 0.5;
+  if (mark && mark.of) { a.lastScore = mark.score; a.lastOf = mark.of; } else { delete a.lastScore; delete a.lastOf; }
   a.last = result;
   a.lastAt = now;
   const answers = { ...progress.answers, [qid]: a };
@@ -317,14 +351,16 @@ export function freshEpoch(progress = emptyProgress()) {
 
 // ---------- export / import ----------
 export function exportProfile(profile, progress) {
-  return JSON.stringify({ app: 'MGMT6110 Exam Prep Quiz', format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), profile, progress: normaliseProgress(progress) }, null, 2);
+  return JSON.stringify({ app: 'MGMT6110 Exam Prep Quiz', format: EXPORT_FORMAT, bank: 'v3', exportedAt: new Date().toISOString(), profile, progress: normaliseProgress(progress) }, null, 2);
 }
 
-/** Accepts format 1 (flags: {qid: true}) and format 2 files. */
+/** Accepts only format-3 files made by this version (the v3 question bank). Older files get a friendly message. */
 export function parseImport(text) {
-  const data = JSON.parse(text);
-  if (!data || data.app !== 'MGMT6110 Exam Prep Quiz' || !data.profile || !data.progress) throw new Error('Not a quiz-app export file');
+  let data;
+  try { data = JSON.parse(text); } catch { throw new Error('This is not a quiz backup file (it is not valid JSON).'); }
+  if (!data || data.app !== 'MGMT6110 Exam Prep Quiz' || !data.profile || !data.progress) throw new Error('This is not a quiz backup file.');
   const format = Number(data.format) || 1;
+  if (format < EXPORT_FORMAT) { const e = new Error(OLD_FILE_MESSAGE); e.oldFormat = true; throw e; }
   if (format > EXPORT_FORMAT) throw new Error(`This file was made by a newer app version (format ${format}). Update the app first.`);
   return { format, profile: data.profile, progress: normaliseProgress(data.progress) };
 }

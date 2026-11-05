@@ -1,13 +1,14 @@
 import React, { useMemo, useState } from 'react';
 import { FINAL_EXAM, daysLeft, examMessage, fmtTime, fmtDate } from '../lib/utils.js';
 import { shortTitle } from '../lib/topics.js';
-import { isFlagged, progressStats } from '../lib/storage.js';
+import { isFlagged, progressStats, answerFraction, NS } from '../lib/storage.js';
+import { quiz40 } from '../lib/content.js';
 import { Ring } from './Ring.jsx';
 
 const BACKUP_EVERY_MS = 3 * 86400000;
 
 function backupDismissed() {
-  try { return sessionStorage.getItem('mgmt6110quiz:backupLater') === '1'; } catch { return false; }
+  try { return sessionStorage.getItem(NS + 'backupLater') === '1'; } catch { return false; }
 }
 
 export default function Home({ content, pool, progress, settings, setSettings, startSession, profile, savedSession, onResume, onDiscardSaved, onBackup }) {
@@ -26,22 +27,26 @@ export default function Home({ content, pool, progress, settings, setSettings, s
       const a = progress.answers[q.id];
       if (a) {
         s.answered += 1;
-        if (a.last === 'correct') s.correct += 1;
-        else if (a.last === 'partly') s.correct += 0.5;
+        s.correct += answerFraction(a);
       }
     }
     return m;
   }, [content, progress]);
 
   const allShort = useMemo(() => content.questions.filter((q) => q.type === 'short'), [content]);
+  const q40 = useMemo(() => quiz40(content.questions), [content]);
   const counts = useMemo(() => ({
+    q40: q40.length,
+    q40done: q40.filter((q) => progress.answers[q.id]).length,
+    pbOfficial: allShort.filter((q) => q.priority === 1).length,
+    mcq: content.questions.filter((q) => q.type === 'mcq').length,
     all: pool.length,
     core: pool.filter((q) => q.core).length,
     anyCore: content.questions.some((q) => q.core),
     short: allShort.filter((q) => !selected.length || selected.includes(q.topic)).length,
     wrong: pool.filter((q) => ['wrong', 'partly'].includes(progress.answers[q.id]?.last)).length,
     flagged: pool.filter((q) => isFlagged(progress, q.id)).length,
-  }), [pool, progress, content, allShort, selected]);
+  }), [pool, progress, content, allShort, selected, q40]);
 
   const stats = useMemo(() => progressStats(progress, content.questions.map((q) => q.id)), [progress, content]);
   const n = daysLeft(FINAL_EXAM.iso);
@@ -53,7 +58,7 @@ export default function Home({ content, pool, progress, settings, setSettings, s
   };
 
   const topicTitle = !selected.length || selected.length === content.topics.length ? 'Topic practice (all topics)' : selected.length > 4 ? `Topic practice (${selected.length} topics)` : `Topic practice (${selected.join(', ')})`;
-  const shortTitleText = selected.length ? `Short questions (${selected.length > 4 ? selected.length + ' topics' : selected.join(', ')})` : 'Short questions (all topics)';
+  const shortTitleText = selected.length ? `Part B practice (${selected.length > 4 ? selected.length + ' topics' : selected.join(', ')})` : 'Part B practice (short questions)';
   const toggleTopic = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const sel = settings;
@@ -68,6 +73,7 @@ export default function Home({ content, pool, progress, settings, setSettings, s
         <div>
           <div className="cd-label">{FINAL_EXAM.label} · {FINAL_EXAM.when}</div>
           <div className="cd-sub">{FINAL_EXAM.sub}</div>
+          <div className="cd-note" data-testid="cd-note">Please check the date and venue on eLearn.</div>
           <div className="cd-msg">{examMessage(n)}</div>
         </div>
       </div>
@@ -91,7 +97,7 @@ export default function Home({ content, pool, progress, settings, setSettings, s
           <b>💾 Back up your progress.</b> {progress.backupAt ? `Last backup ${fmtDate(progress.backupAt)}.` : 'You have not made a backup yet.'} One tap saves a small file you can import on any device.
           <div className="btn-row" style={{ marginTop: 8 }}>
             <button className="btn sm primary" onClick={onBackup}>Back up now</button>
-            <button className="btn sm ghost" onClick={() => { try { sessionStorage.setItem('mgmt6110quiz:backupLater', '1'); } catch { /* ignore */ } setLater(true); }}>Later</button>
+            <button className="btn sm ghost" onClick={() => { try { sessionStorage.setItem(NS + 'backupLater', '1'); } catch { /* ignore */ } setLater(true); }}>Later</button>
           </div>
         </div>
       )}
@@ -109,31 +115,31 @@ export default function Home({ content, pool, progress, settings, setSettings, s
       {/* Modes */}
       <div className="section-title"><h2>Practice modes</h2><span className="small muted">{counts.all} questions in pool</span></div>
       <div className="modes">
+        <button className="mode hero-mode" data-testid="mode-quiz40" onClick={() => start({ mode: 'quiz40', title: "Prof Roh's 40 quiz questions" })} disabled={!counts.q40}>
+          <span className="ic">🏅</span>
+          <span><div className="t">Prof Roh's 40 quiz questions <span className="badge-mini">official</span></div><div className="d">{counts.q40 === 40 ? 'All 40' : counts.q40} in quiz order, Q1.1 → Q4.10 · {counts.q40done} done. After each one: why every option is right or wrong. Part A is written like these.</div></span>
+        </button>
+        <button className="mode hero-mode" data-testid="mode-short" onClick={() => start({ mode: 'partb', title: shortTitleText, topics: selected })} disabled={!counts.short}>
+          <span className="ic">✍️</span>
+          <span><div className="t">Part B practice (short questions)</div><div className="d">{counts.short} four-part questions{counts.pbOfficial ? `, Prof Roh's ${counts.pbOfficial} first` : ''}{selected.length ? ' · in your selected topics' : ''}. Define → Explain → Apply → Check, mark each part 0 or 1.</div></span>
+        </button>
+        <button className="mode" data-testid="mode-mock" onClick={() => start({ mode: 'mock', title: 'Mock final', timerMinutes: 120 })} disabled={counts.mcq < 1 || !allShort.length}>
+          <span className="ic">📝</span>
+          <span><div className="t">Mock final</div><div className="d">Part A 10 × 1 point · Part B 5 × 4 points = 30 points. At least 4 of Prof Roh's quiz questions and 1 of his Part B. 2-hour timer.</div></span>
+        </button>
         {counts.anyCore && (
-          <button className="mode hero-mode" onClick={() => start({ mode: 'core', title: 'Exam core set', topics: selected })} disabled={!counts.core}>
+          <button className="mode" onClick={() => start({ mode: 'core', title: 'Exam core set', topics: selected })} disabled={!counts.core}>
             <span className="ic">🎯</span>
-            <span><div className="t">Exam core set</div><div className="d">{counts.core} questions most likely to be examined on 12 Nov{selected.length ? ' · in your selected topics' : ''}</div></span>
+            <span><div className="t">Exam core set</div><div className="d">{counts.core} questions most likely to be examined{selected.length ? ' · in your selected topics' : ''}, Prof Roh's first</div></span>
           </button>
         )}
-        <button className="mode" onClick={() => start({ mode: 'quick10', title: 'Quick 10', count: 10, timerMinutes: 15, shuffleQ: true })} disabled={counts.all < 1}>
-          <span className="ic">⚡</span>
-          <span><div className="t">Quick 10</div><div className="d">10 random questions, 15-minute timer</div></span>
-        </button>
-        <button className="mode" onClick={() => start({ mode: 'mock', title: 'Full mock exam', count: 30, timerMinutes: 45, shuffleQ: true })} disabled={counts.all < 1}>
-          <span className="ic">📝</span>
-          <span><div className="t">Full mock exam</div><div className="d">30 random questions across all topics, 45 min</div></span>
-        </button>
-        <button className="mode" data-testid="mode-short" onClick={() => start({ mode: 'short', title: shortTitleText, topics: selected })} disabled={!counts.short}>
-          <span className="ic">✍️</span>
-          <span><div className="t">Short questions</div><div className="d">{counts.short} short-answer questions{selected.length ? ' in your selected topics' : ' · tap topics below to filter'}. Write, reveal, self-grade.</div></span>
-        </button>
         <button className="mode" onClick={() => start({ mode: 'topic', title: topicTitle, topics: selected })} disabled={!counts.all}>
           <span className="ic">📚</span>
           <span><div className="t">Topic practice</div><div className="d">{selected.length ? `${selected.length} topic${selected.length > 1 ? 's' : ''} selected: ${selected.join(', ')}` : 'Tap topic cards below to choose one or many, then start'}</div></span>
         </button>
         <button className="mode" onClick={() => start({ mode: 'wrong', title: 'Review wrong' })} disabled={!counts.wrong}>
           <span className="ic">🔁</span>
-          <span><div className="t">Review wrong</div><div className="d">{counts.wrong ? `${counts.wrong} to retry` : 'Nothing wrong yet'}</div></span>
+          <span><div className="t">Review wrong</div><div className="d">{counts.wrong ? `${counts.wrong} to retry (wrong or partly)` : 'Nothing wrong yet'}</div></span>
         </button>
         <button className="mode" onClick={() => start({ mode: 'flagged', title: 'Review flagged' })} disabled={!counts.flagged}>
           <span className="ic">⭐</span>
@@ -148,7 +154,7 @@ export default function Home({ content, pool, progress, settings, setSettings, s
           <div className="row">
             <label className="toggle"><input type="checkbox" checked={sel.shuffleQ} onChange={() => setSettings((s) => ({ ...s, shuffleQ: !s.shuffleQ }))} /><span className="track" /><span>Randomise question order</span></label>
             <label className="toggle"><input type="checkbox" checked={sel.shuffleOpts} onChange={() => setSettings((s) => ({ ...s, shuffleOpts: !s.shuffleOpts }))} /><span className="track" /><span>Randomise option order</span></label>
-            <label className="toggle"><input type="checkbox" checked={sel.timer} onChange={() => setSettings((s) => ({ ...s, timer: !s.timer }))} /><span className="track" /><span>Timer (Quick 10 and mock)</span></label>
+            <label className="toggle"><input type="checkbox" checked={sel.timer} onChange={() => setSettings((s) => ({ ...s, timer: !s.timer }))} /><span className="track" /><span>Timer (mock final)</span></label>
           </div>
           <div className="row">
             <span className="lab">Question types</span>
@@ -166,7 +172,7 @@ export default function Home({ content, pool, progress, settings, setSettings, s
               ))}
             </div>
           </div>
-          <div className="small muted">Mock exams always shuffle question order. Content version: {content.version}{content.warnings.length ? ` · ${content.warnings.length} content warning(s), see console` : ''}</div>
+          <div className="small muted">Without shuffling, questions come in priority order: Prof Roh's official ones first, then studio checkpoints, then likely ones. The mock final and the 40 quiz questions keep their own order. Content version: {content.version}{content.warnings.length ? ` · ${content.warnings.length} content warning(s), see console` : ''}</div>
         </div>
       </details>
 

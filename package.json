@@ -1,14 +1,15 @@
 {
   "name": "mgmt6110-exam-prep-quiz",
   "private": true,
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
-  "description": "MGMT6110 Exam Prep Quiz — static study app (Vite + React)",
+  "description": "MGMT6110 Exam Prep Quiz \u2014 static study app (Vite + React)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "sync-content": "bash scripts/sync-content.sh"
+    "sync-content": "bash scripts/sync-content.sh",
+    "test": "PORT=4311 node scripts/test-v3.cjs"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -5,13 +5,14 @@ export function serialiseSession(s) {
   if (!s) return null;
   const elapsed = Math.max(0, Math.round((Date.now() - s.startedAt) / 1000));
   return {
-    v: 1,
+    v: 3,
     mode: s.mode,
     title: s.title,
     qids: s.questions.map((q) => q.id),
     optOrder: s.optOrder,
     index: s.index,
     results: s.results,
+    marks: s.marks || {},
     qstate: s.qstate || {},
     shown: s.shown || {},
     timerSec: s.timerSec ?? null,
@@ -45,6 +46,7 @@ export function hydrateSession(saved, content) {
     optOrder,
     index: Math.max(0, Math.min(questions.length - 1, Number(saved.index) || 0)),
     results,
+    marks: Object.fromEntries(Object.entries(saved.marks || {}).filter(([k]) => ids.has(k))),
     qstate: saved.qstate || {},
     shown: saved.shown || {},
     timerSec: saved.timerSec ?? null,
